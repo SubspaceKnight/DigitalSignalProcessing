@@ -1,5 +1,4 @@
 """
-Home.py  ─  Streamlit entry point
 Run with:  uv run streamlit run Home.py
 """
 import streamlit as st
@@ -13,14 +12,14 @@ st.set_page_config(
 st.title("🏎️ DSP Exercise 1 - Time Domain Analysis")
 st.markdown(
     """
-    **Course:** Digital Signal Processing · FH Joanneum  
-    **Dataset:** Bahrain Grand Prix 2024 telemetry · Driver: Max Verstappen (VER)
+    **Course:** Digital Signal Processing
+    **Dataset:** Bahrain Grand Prix 2024 telemetry. Driver: Max Verstappen (VER)
     """
 )
 
-st.info("Use the **sidebar** to navigate between sections of the report.", icon="ℹ️")
+st.info("Use the **sidebar** to navigate between sections of the report.")
 
-col1, col2 = st.columns([2, 1])
+col1 = st.columns(1)
 
 with col1:
     st.markdown(
@@ -37,10 +36,11 @@ with col1:
         - **Methods** - what we did and why
         - **Results** - interactive plots
         - **Discussion** - what we found and what's missing
+        - **Race Visualisation** - displaying the laps on a track map (by X,Y coordinates)
         """
     )
 
-with col2:
-    st.markdown("### A lap at Bahrain")
-    # The YouTube Short the professor requested
-    st.video("https://www.youtube.com/shorts/8E36bKfg_qU")
+# with col2:
+#     st.markdown("### A lap at Bahrain")
+#     # The YouTube Short the professor requested
+#     st.video("https://www.youtube.com/shorts/8E36bKfg_qU")

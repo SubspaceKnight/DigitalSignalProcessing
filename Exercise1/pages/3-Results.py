@@ -1,7 +1,3 @@
-"""
-pages/3_Results.py  -  Interactive results with Plotly
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np

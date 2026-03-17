@@ -9,8 +9,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 import helper
 import analysis
 
-st.set_page_config(page_title="Discussion", page_icon="💬", layout="wide")
-st.title("💬 Discussion")
+st.set_page_config(page_title="Discussion", layout="wide")
+st.title("Discussion")
 
 @st.cache_data
 def load():
@@ -23,7 +23,7 @@ summary     = analysis.build_lap_summary(driver_df)
 fastest_lap = analysis.get_fastest_lap(summary)
 signals     = ["Speed", "Throttle", "Brake"]
 
-# ── Stint structure ───────────────────────────────────────────────────────────
+#Stint structure
 st.markdown("## Stint structure")
 st.markdown(
     "The three stints are clearly visible in the lap time trend. "
@@ -171,31 +171,5 @@ if not fl_brake.empty:
         "The longest duration zones correspond to the heaviest braking points on the circuit."
     )
 
-#Honest assessment
-st.markdown("## What worked, what didn't, what's next")
-st.dataframe(pd.DataFrame([
-    {"What":    "Lap normalization (0-100%)",
-     "Verdict": "✅ Works",
-     "Limit":   "Linear interp — can misalign if a lap has an unusually slow sector"},
-    {"What":    "Pit stop detection via Speed=0",
-     "Verdict": "✅ Works",
-     "Limit":   "Assumes pitlane speed limiter brings car to full stop — holds for Bahrain"},
-    {"What":    "TrackStatus outlier filtering",
-     "Verdict": "✅ Works",
-     "Limit":   "Excludes entire laps — a yellow in sector 3 also removes sectors 1 and 2"},
-    {"What":    "CV consistency metric",
-     "Verdict": "✅ Informative",
-     "Limit":   "Doesn't separate within-lap vs lap-to-lap variability"},
-    {"What":    "Brake zone detection (threshold)",
-     "Verdict": "⚠️ Basic",
-     "Limit":   "No smoothing — sensor noise can create false positives"},
-    {"What":    "Distance-based lap alignment",
-     "Verdict": "❌ Not done",
-     "Limit":   "Would need GPS distance channel — time-based alignment is an approximation"},
-    {"What":    "FFT on Speed signal",
-     "Verdict": "❌ Not done",
-     "Limit":   "Would reveal lap-periodic structure — planned for Exercise 2"},
-]), use_container_width=True, hide_index=True)
-
 st.divider()
-st.caption("DSP Exercise 1 · FH Joanneum · 2026")
+st.caption("DSP Exercise 1 • FH Joanneum • 2026")
