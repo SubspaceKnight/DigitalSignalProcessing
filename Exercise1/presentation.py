@@ -19,7 +19,7 @@ st.markdown(
 
 st.info("Use the **sidebar** to navigate between sections of the report.")
 
-col1 = st.columns(1)
+col1, = st.columns(1)
 
 with col1:
     st.markdown(
