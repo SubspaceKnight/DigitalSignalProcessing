@@ -32,10 +32,12 @@ st.sidebar.header("Plot settings")
 available_signals = [c for c in helper.TELEMETRY_COLS if c in driver_df.columns]
 signal = st.sidebar.selectbox("Telemetry variable", available_signals, index=0)
 show_outliers = st.sidebar.checkbox("Highlight outlier laps", value=True)
-z_thresh = st.sidebar.slider("Outlier Z-threshold", 1.5, 4.0, 2.5, 0.1)
+outlier_laps = helper.flag_outlier_laps(driver_df)
+#z_thresh = st.sidebar.slider("Outlier Z-score threshold", min_value=0.0, max_value=5.0, value=2.0, step=0.1)
+
 
 #Detect outlier laps
-outlier_laps = helper.flag_outlier_laps(driver_df, signal="Speed", z_threshold=z_thresh)
+outlier_laps = helper.flag_outlier_laps(driver_df, signal="Speed") #, z_threshold=z_thresh
 all_laps     = helper.list_laps(driver_df)
 normal_laps  = [l for l in all_laps if l not in outlier_laps]
 

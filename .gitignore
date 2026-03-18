@@ -211,3 +211,4 @@ Exercise1/archive/*
 DSP-demo-main/.DS_Store
 .gitignore
 Exercise1/Bahrain_time_series.csv
+.DS_Store

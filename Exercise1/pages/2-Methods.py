@@ -22,8 +22,8 @@ driver_df = load()
 st.markdown("## Why these three variables?")
 st.markdown(
     "Speed, Throttle, and Brake describe the complete driver input cycle. "
-    "We show the correlation matrix below that confirms their complementarity: they are not redundant, but rather interdependent signals that together"
-    "carry distinct information:"
+    "We show the correlation matrix below that confirms their complementarity: they are not redundant, but rather "
+    "interdependent signals that together carry distinct information:"
 )
 
 corr = (
@@ -176,7 +176,7 @@ st.markdown("## Handling variable-length laps")
 st.markdown(
     """
     The lap time histogram above shows that even clean racing laps vary between
-    roughly 94-97 s, while pit laps reach 99-117 s. Since the data is sampled
+    roughly 94-97 s, while the confirmed pit stop lap reaches ~117 s. Since the data is sampled
     at a fixed rate, a longer lap = more samples. Trying to average a 350-sample
     lap with a 420-sample lap directly would misalign every corner feature.
     We solve this by resampling every lap onto a 500-point 0-100% grid

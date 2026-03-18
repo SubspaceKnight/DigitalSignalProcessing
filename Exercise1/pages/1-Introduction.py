@@ -60,7 +60,7 @@ st.markdown(
 lap1 = helper.get_lap(driver_df, helper.list_laps(driver_df)[10])
 fig_intro = go.Figure()
 fig_intro.add_trace(go.Scatter(
-    x=lap1["Time"].cumsum(),
+    x=lap1["Time"].dt.total_seconds().cumsum(),
     y=lap1["Speed"],
     mode="lines",
     line=dict(color="cornflowerblue", width=1.5),

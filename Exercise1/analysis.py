@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go 
-from scipy.signal import find_peaks
 from helper import (
     get_lap, list_laps,
     lap_summary, COL_LAP, COL_TIME, COL_SESSION
@@ -12,8 +11,8 @@ def compute_sampling_stats(driver_df: pd.DataFrame) -> dict:
     """
     Compute real sampling rate from the Time column (delta between rows). Returns mean fs, std, min, max in Hz.
     """
-    driver_df["Time"] = pd.to_timedelta(driver_df["Time"])
-    deltas = driver_df["Time"].diff().dt.total_seconds().dropna()
+    #driver_df["Time"] = pd.to_timedelta(driver_df["Time"])
+    deltas = driver_df[COL_TIME].diff().dt.total_seconds().dropna()
     deltas = deltas[deltas > 0] #drop resets at lap boundaries
     fs_series = 1.0 / deltas
     return {
@@ -210,13 +209,6 @@ def build_lap_summary(driver_df: pd.DataFrame) -> pd.DataFrame:
         )
     else:
         summary["lap_time_s"] = np.nan
-
-    return summary.rename(columns={
-        COL_LAP:      "Lap",
-        "lap_time_s": "Lap time (s)",
-        "avg_speed":  "Avg speed (km/h)",
-        "max_speed":  "Max speed (km/h)",
-    }).round(3)
 
     return summary.rename(columns={
         COL_LAP:      "Lap",
