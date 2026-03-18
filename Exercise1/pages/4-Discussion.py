@@ -27,7 +27,9 @@ signals     = ["Speed", "Throttle", "Brake"]
 st.markdown("## Stint structure")
 st.markdown(
     "The three stints are clearly visible in the lap time trend. "
-    "Average lap times per stint, computed directly from SessionTime:"
+    "Average lap times per stint, computed directly from SessionTime, are shown in the table below. "
+    "Laps 17 and 37 were excluded because lap time deteriorated strongly at the end of the tyre cycle, "
+    "and the subsequent lap corresponded to the pit-stop phase. They were therefore not considered representative of normal race pace within a stint."
 )
 
 stints = [
@@ -73,38 +75,81 @@ st.markdown(
 st.markdown("## Lap time trend across the race")
 
 fig_lt = go.Figure()
-for s in stints:
-    mask  = summary["Lap"].between(s["From"], s["To"])
-    chunk = summary[mask]
+
+def lap_to_tyre(lap):
+    if lap <= 17:   return "Soft C3",  "#e8333a"   #red for soft
+    elif lap <= 38: return "Hard C1",  "#c8c8c8"   #grey for hard
+    else:           return "Soft C3",  "#e8333a"   #again red for soft
+
+all_laps_summary = summary.dropna(subset=["Lap time (s)"]).sort_values("Lap")
+
+#continuous background line now, so, there are no gaps like in prev version...
+fig_lt.add_trace(go.Scatter(
+    x=all_laps_summary["Lap"],
+    y=all_laps_summary["Lap time (s)"],
+    mode="lines",
+    line=dict(color="rgba(180,180,180,0.3)", width=1.5),
+    showlegend=False,
+    hoverinfo="skip",
+))
+
+#color markers per tyre compound again (on top of the background line)
+for label, color, lap_range in [
+    ("Soft C3 — Stint 1", "#e8333a", range(1,  18)),
+    ("Hard C1 — Stint 2", "#c8c8c8", range(18, 39)),
+    ("Soft C3 — Stint 3", "#e8333a", range(39, 58)),
+]:
+    chunk = all_laps_summary[all_laps_summary["Lap"].isin(lap_range)]
     fig_lt.add_trace(go.Scatter(
         x=chunk["Lap"],
         y=chunk["Lap time (s)"],
-        mode="lines+markers",
-        name=f"Stint {s['Stint']} ({s['Tyres']})",
-        marker=dict(size=5),
+        mode="markers+lines",
+        marker=dict(size=6, color=color),
+        line=dict(color=color, width=1.5),
+        name=label,
+        hovertemplate="Lap %{x}: %{y:.3f} s<extra></extra>",
     ))
 
-#Pit stop markers
+#also we can do pit lap markers on top, why not, since we know them for sure, and they are important reference points in the lap time trend
+for pit_lap in [18, 38]:
+    pit_row = all_laps_summary[all_laps_summary["Lap"] == pit_lap]
+    if not pit_row.empty:
+        fig_lt.add_trace(go.Scatter(
+            x=pit_row["Lap"],
+            y=pit_row["Lap time (s)"],
+            mode="markers",
+            marker=dict(size=12, color="yellow", symbol="diamond", #can be any shape/symbol
+                        line=dict(color="black", width=1)),
+            name=f"Pit stop (Lap {pit_lap})",
+            hovertemplate=f"Pit lap {pit_lap}: %{{y:.3f}} s<extra></extra>",
+        ))
+
+#of course pit stop vertical lines
 for pit_lap in [18, 38]:
     fig_lt.add_vline(
         x=pit_lap,
-        line=dict(color="red", dash="dash", width=1.5),
-        annotation_text=f"Pit lap {pit_lap}",
-        annotation_position="top",
+        line=dict(color="rgba(255,255,0,0.4)", dash="dash", width=1),
     )
 
 fig_lt.update_layout(
-    xaxis_title="Lap number",
+    xaxis=dict(
+        title="Lap number",
+        range=[1, 57],
+        dtick=5,
+        tick0=1,
+    ),
     yaxis_title="Lap time (s)",
-    height=380,
+    height=400,
     margin=dict(l=60, r=20, t=40, b=60),
     legend=dict(orientation="h", y=1.02),
     hovermode="x unified",
 )
 st.plotly_chart(fig_lt, use_container_width=True)
 st.caption(
-    "Each stint is colored separately. Red dashed lines mark pit stops on laps 18 and 38, "
-    "detected from sustained Speed = 0 in the telemetry."
+    "Red = Soft C3, grey = Hard C1. "
+    "Yellow diamonds = pit stop laps (18 and 38). "
+    "The x-axis runs continuously from lap 1 to 57 - "
+    "transition laps 170->18 and 37->38 are included."
 )
 
 #Consistency table 
@@ -120,13 +165,13 @@ st.dataframe(cv_df, use_container_width=True, hide_index=True)
 st.markdown("## Braking consistency across the race")
 st.markdown(
     """
-    Do braking zones get longer as tyres degrade?
-    Longer brake duration at the same corner = less grip = harder stops needed.
-    We sample one representative lap from each part of each stint:
+    We check whether braking zones get longer as tyres degrade -
+    less grip would force earlier, longer brake applications.
+    One representative lap is sampled from each part of each stint:
     """
 )
 
-sample_laps = [5, 14, 22, 34, 42, 54]
+sample_laps = [5, 17, 22, 37, 42, 54]
 brake_rows  = []
 for lap in sample_laps:
     ldf = helper.get_lap(driver_df, lap).copy()
@@ -146,9 +191,11 @@ for lap in sample_laps:
 brake_trend = pd.DataFrame(brake_rows)
 st.dataframe(brake_trend, use_container_width=True, hide_index=True)
 st.caption(
-    "An increase in total brake time within a stint = tyre degradation. "
-    "A reset to early-stint values after a pit stop = fresh tyre effect. "
-    "This is the most direct time-domain evidence of tyre wear in this dataset."
+    "Total brake time stays within 18.6-20.0 s across all three stints — "
+    "no clear degradation trend is visible in the time domain. "
+    "This either means tyre wear did not significantly affect braking at Bahrain, "
+    "or that our lap sampling (one lap per stint segment) is too coarse to detect it. "
+    "Probably a corner-by-corner breakdown using GPS alignment would be needed to say more."
 )
 
 #Fastest lap breakdown 

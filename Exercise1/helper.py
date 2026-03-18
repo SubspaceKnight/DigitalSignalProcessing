@@ -39,7 +39,8 @@ def load_raw(path: Path = DATA_PATH) -> pd.DataFrame:
     for col in ["LapNumber", "Speed", "RPM", "Throttle", "nGear"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
+            if col == "LapNumber":
+                df[col] = df[col].astype("Int64")
     return df
 
 

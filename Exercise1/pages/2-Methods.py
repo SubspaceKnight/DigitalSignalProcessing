@@ -53,60 +53,52 @@ st.markdown(
     """
 )
 summary = analysis.build_lap_summary(driver_df)
-fig_lt  = go.Figure(go.Histogram(
+fig_lt = go.Figure(go.Histogram(
     x=summary["Lap time (s)"].dropna(),
-    nbinsx=30,
+    xbins=dict(
+        start=summary["Lap time (s)"].min() - 0.5,
+        end=summary["Lap time (s)"].max() + 1.5,
+        size=1,                          #1 second per bin
+    ),
     marker_color="cornflowerblue",
 ))
 fig_lt.update_layout(
     xaxis_title="Lap time (s)",
     yaxis_title="Count",
-    title="Distribution of lap times — two clear outliers = pit stop laps",
+    title="Distribution of lap times - pit stop laps marked in red",
     height=300,
     margin=dict(l=60, r=20, t=50, b=60),
 )
+pit_lap_times = {}
+for pit_lap in [18, 38]:
+    row = summary[summary["Lap"] == pit_lap]["Lap time (s)"]
+    if not row.empty:
+        pit_lap_times[pit_lap] = row.values[0]
+
+for pit_lap, pit_time in pit_lap_times.items():
+    fig_lt.add_vline(
+        x=pit_time,
+        line=dict(color="tomato", dash="dash", width=1.5),
+        annotation_text=f"Lap {pit_lap} ({pit_time:.1f}s)",
+        annotation_position="top right" if pit_lap == 18 else "top left",
+        annotation_font=dict(color="tomato", size=11),
+    )
 st.plotly_chart(fig_lt, use_container_width=True)
-st.caption(
-    "Most racing laps cluster between 94-97 s. "
-    "The bar at ~99–100 s is a slightly slower lap, likely due to traffic or a yellow flag. "
-    "The isolated bar at ~117 s is a confirmed pit stop lap — "
-    "identified by sustained Speed = 0 in the zero-speed analysis below. "
-    "The second pit stop lap may fall within the main cluster depending on pitlane duration."
-)
-
-
-# demo = analysis.normalization_demo(driver_df, signal="Speed")
-# raw, norm = demo["raw"], demo["normalized"]
-# sample_laps = list(raw.keys())
-
-# fig_norm = make_subplots(
-#     rows=1, cols=2,
-#     subplot_titles=("Raw — different lengths (samples)", "Normalized — 0-100% lap completion"),
-# )
-# colors = ["cornflowerblue", "coral", "mediumseagreen"]
-# for i, lap in enumerate(sample_laps):
-#     fig_norm.add_trace(go.Scatter(
-#         x=raw[lap]["x"], y=raw[lap]["y"],
-#         mode="lines", line=dict(color=colors[i], width=1.5),
-#         name=f"Lap {lap}",
-#     ), row=1, col=1)
-#     fig_norm.add_trace(go.Scatter(
-#         x=norm[lap]["x"], y=norm[lap]["y"],
-#         mode="lines", line=dict(color=colors[i], width=1.5),
-#         name=f"Lap {lap}", showlegend=False,
-#     ), row=1, col=2)
-
-# fig_norm.update_layout(height=380, margin=dict(l=60, r=20, t=60, b=60))
-# fig_norm.update_xaxes(title_text="Sample index", row=1, col=1)
-# fig_norm.update_xaxes(title_text="Lap completion (%)", row=1, col=2)
-# fig_norm.update_yaxes(title_text="Speed (km/h)", row=1, col=1)
-# st.plotly_chart(fig_norm, use_container_width=True)
 # st.caption(
-#     "Left: three raw laps end at different sample counts — they cannot be averaged. "
-#     "Right: after linear interpolation to a 500-point grid, all three align. "
-#     "Corner features now occur at the same x position."
+#     "Most racing laps cluster between 94-97 s. "
+#     "The bar at ~99-100 s is a slightly slower lap, likely due to traffic or a yellow flag. "
+#     "The isolated bar at ~117 s is a confirmed pit stop lap — "
+#     "identified by sustained Speed = 0 in the zero-speed analysis below. "
+#     "The second pit stop lap may fall within the main cluster depending on pitlane duration."
 # )
-
+st.caption(
+    f"Main cluster: 94-97 s racing laps. "
+    f"Lap 18: {pit_lap_times.get(18, '?'):.1f} s — "
+    f"Lap 38: {pit_lap_times.get(38, '?'):.1f} s. "
+    "Both are marked with red dashed lines. "
+    "If one falls within the main cluster, it means that pit stop was unusually fast "
+    "and the car was moving through the pitlane for most of the lap."
+)
 
 #Pit stop detection
 st.markdown("## Pit stop detection via Speed = 0")

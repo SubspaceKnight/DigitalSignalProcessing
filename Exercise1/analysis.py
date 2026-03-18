@@ -53,7 +53,7 @@ def flag_outlier_laps(driver_df: pd.DataFrame) -> pd.DataFrame:
                 if s.notna().any()
                 else np.nan
             ),
-            Flagged=lambda s: (~s.isin([1, 2])).any(),
+            Flagged=lambda s: (~s.isin([1, 1])).any(),
         ).reset_index().rename(columns={COL_LAP: "Lap"})
     )
     status_map = { "1": "Green", "2": "Yellow", "4": "Safety Car", "5": "Red Flag", "6": "VSC ending" }
@@ -74,7 +74,7 @@ def normalization_demo(driver_df: pd.DataFrame, signal: str = "Speed", sample_la
     laps = list_laps(driver_df)
     if sample_laps is None:
         #we pick 3 spread-out laps
-        sample_laps = [laps[5], laps[25], laps[-5]]
+        sample_laps = [laps[5], laps[17], laps[-5]]
 
     raw, normalized = {}, {}
     for lap in sample_laps:
