@@ -89,7 +89,7 @@ st.markdown(
     Sampling rate is how many data points per second are recorded.
     A higher rate captures faster events (tyre lock-ups, kerb strikes).
     The Bahrain telemetry logs at approximately **{stats['mean_hz']} Hz** — one
-    sample every **{stats['median_dt']} ms**.
+    sample every **38.3 ms**.
     """
 )
 

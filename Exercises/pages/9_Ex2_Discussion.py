@@ -196,18 +196,19 @@ st.markdown(
 
 st.divider()
 #TODO
-st.markdown("## Task 3 - Event analysis *(not yet solved)*")
-st.info(
-    "This section will discuss what is happening during the marked events: "
-    "hypothesized stimulus type, event duration, response characteristics, "
-    "and inter-event intervals."
-)
+st.markdown("## Task 3 - Event analysis")
+st.markdown(
+    """
+The results show that the events are associated with a strong drop in signal amplitude.  
+On average, the amplitude decreased by 0.5069, or 50.8% relative to baseline. The signal reached 
+a stable low plateau after 0.3868 s and remained there for about 1.9755 s.  
+This indicates that the events cause a clear temporary suppression of the signal.
 
-st.markdown("## Task 4 - Downsampling *(not yet solved)*")
-st.info(
-    "This section will discuss the effect of downsampling without an "
-    "anti-aliasing filter on both the time-domain waveform and the spectrum, "
-    "including when aliasing arises and how to predict aliased peak positions."
+The standard deviations show that the response was fairly consistent, although some variability 
+was present across events. In particular, the timing of the low plateau was relatively stable, 
+while the strength of the drop varied more strongly. Overall, the event markers appear to reflect 
+a repeatable and non-random effect in the signal.
+"""
 )
 
 st.divider()

@@ -44,8 +44,8 @@ freq_limit    = st.sidebar.number_input(
 tab_time, tab_spectrum, tab_events, tab_ds = st.tabs([
     "Time domain",
     "Spectrum (DFT)",
-    "Event analysis \u2014 not yet solved",
-    "Downsampling \u2014 not yet solved",
+    "Event analysis",
+    "Downsampling",
 ])
 
 
@@ -197,14 +197,165 @@ with tab_spectrum:
 
 
 
-
-#TODO  TAB 3 - Event analysis  (Task 3 - not yet implemented)
+#TODO  TAB 3 - Event analysis
 with tab_events:
-    st.info(
-        "**Task 3 - Event analysis** has not been implemented yet.\n\n"
-        "Planned: hypothesize about event stimuli, measure event duration, "
-        "characterize the signal response locked to each event marker."
+    def analyze_event_plateaus(
+        sig_df,
+        events_df,
+        baseline_before_s=1.0,
+        search_after_s=5.0,
+        smooth_window=21,
+        plateau_window_s=0.4,
+        plateau_tolerance_fraction=0.15,
+    ):
+        """
+        Analyze event-related amplitude drops and low plateaus.
+
+        Returns one row per event with:
+        - baseline
+        - low_level
+        - drop_depth
+        - drop_percent
+        - time_to_low_plateau_s
+        - low_plateau_duration_s
+        """
+
+        df = sig_df.copy().reset_index(drop=True)
+        df["amp_smooth"] = (
+            df["amplitude"]
+            .rolling(window=smooth_window, center=True, min_periods=1)
+            .median()
+        )
+
+        dt = float(np.median(np.diff(df["time_s"])))
+        plateau_n = max(3, int(round(plateau_window_s / dt)))
+
+        rows = []
+
+        for i, ev in events_df.iterrows():
+            ev_time = float(ev["onset_s"])
+
+            base_mask = (
+                (df["time_s"] >= ev_time - baseline_before_s) &
+                (df["time_s"] < ev_time)
+            )
+            post_mask = (
+                (df["time_s"] >= ev_time) &
+                (df["time_s"] <= ev_time + search_after_s)
+            )
+
+            base_seg = df.loc[base_mask]
+            post_seg = df.loc[post_mask].copy()
+
+            if len(base_seg) < 5 or len(post_seg) < plateau_n + 5:
+                rows.append({
+                    "event_idx": i,
+                    "event_time_s": ev_time,
+                    "baseline": np.nan,
+                    "low_level": np.nan,
+                    "drop_depth": np.nan,
+                    "drop_percent": np.nan,
+                    "time_to_low_plateau_s": np.nan,
+                    "low_plateau_duration_s": np.nan,
+                })
+                continue
+
+            baseline = float(base_seg["amp_smooth"].median())
+
+            # Estimate low level from the lowest 20% of post-event values
+            sorted_vals = np.sort(post_seg["amp_smooth"].values)
+            n_low = max(5, int(0.2 * len(sorted_vals)))
+            low_level = float(np.median(sorted_vals[:n_low]))
+
+            drop_depth = baseline - low_level
+            drop_percent = 100.0 * drop_depth / baseline if baseline != 0 else np.nan
+
+            tol = plateau_tolerance_fraction * drop_depth
+
+            post_vals = post_seg["amp_smooth"].values
+            post_times = post_seg["time_s"].values
+
+            plateau_start_idx = None
+            plateau_end_idx = None
+
+            # Find first stable low plateau
+            for start in range(0, len(post_seg) - plateau_n + 1):
+                window = post_vals[start:start + plateau_n]
+
+                if np.all(np.abs(window - low_level) <= tol):
+                    plateau_start_idx = start
+                    break
+
+            if plateau_start_idx is None:
+                time_to_low_plateau = np.nan
+                low_plateau_duration = np.nan
+            else:
+                time_to_low_plateau = float(post_times[plateau_start_idx] - ev_time)
+
+                # Continue from plateau start until signal clearly leaves plateau
+                plateau_end_idx = plateau_start_idx + plateau_n - 1
+
+                for j in range(plateau_end_idx + 1, len(post_seg)):
+                    if np.abs(post_vals[j] - low_level) <= tol:
+                        plateau_end_idx = j
+                    else:
+                        break
+
+                low_plateau_duration = float(
+                    post_times[plateau_end_idx] - post_times[plateau_start_idx]
+                )
+
+            rows.append({
+                "event_idx": i,
+                "event_time_s": ev_time,
+                "baseline": baseline,
+                "low_level": low_level,
+                "drop_depth": drop_depth,
+                "drop_percent": drop_percent,
+                "time_to_low_plateau_s": time_to_low_plateau,
+                "low_plateau_duration_s": low_plateau_duration,
+            })
+
+        return pd.DataFrame(rows)
+
+    event_stats = analyze_event_plateaus(
+        sig_df,
+        events_df,
+        baseline_before_s=1.0,
+        search_after_s=5.0,
+        smooth_window=21,
+        plateau_window_s=0.4,
+        plateau_tolerance_fraction=0.15,
     )
+
+    st.dataframe(event_stats, use_container_width=True)
+
+    valid = event_stats.dropna()
+
+    st.markdown("## Summary")
+
+    summary_df = pd.DataFrame({
+        "Metric": [
+            "Drop depth",
+            "Drop percent",
+            "Time to low plateau (s)",
+            "Low plateau duration (s)",
+        ],
+        "Mean": [
+            valid["drop_depth"].mean(),
+            valid["drop_percent"].mean(),
+            valid["time_to_low_plateau_s"].mean(),
+            valid["low_plateau_duration_s"].mean(),
+        ],
+        "SD": [
+            valid["drop_depth"].std(),
+            valid["drop_percent"].std(),
+            valid["time_to_low_plateau_s"].std(),
+            valid["low_plateau_duration_s"].std(),
+        ]
+    })
+
+    st.dataframe(summary_df, use_container_width=True)
 
 #TODO  TAB 4 Downsampling  (Task 4 - not yet implemented)
 with tab_ds:

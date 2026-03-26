@@ -155,6 +155,63 @@ st.caption(
 
 st.divider()
 
+
+# -----------------------------
+# Event zoom
+# -----------------------------
+st.markdown("## Event-based view in the time domain")
+st.markdown(
+    "Besides the frequency analysis, the signal was examined around the event markers. "
+    "This makes it easier to understand how the signal behaves during the marked events."
+)
+
+event_idx = 4
+window_before = 5.0
+window_after = 10.0
+
+if len(events_df) > event_idx:
+    ev_time = float(events_df.iloc[event_idx]["onset_s"])
+    t_min = ev_time - window_before
+    t_max = ev_time + window_after
+
+    zoom_mask = (sig_df["time_s"] >= t_min) & (sig_df["time_s"] <= t_max)
+    sig_zoom = sig_df.loc[zoom_mask]
+
+    fig_zoom = go.Figure()
+    fig_zoom.add_trace(go.Scatter(
+        x=sig_zoom["time_s"],
+        y=sig_zoom["amplitude"],
+        mode="lines",
+        line=dict(color="cornflowerblue", width=1.2),
+        name="Signal",
+    ))
+
+    fig_zoom.add_vline(
+        x=ev_time,
+        line=dict(color="tomato", width=1.5, dash="dash"),
+    )
+
+    fig_zoom.update_layout(
+        xaxis_title="Time (s)",
+        yaxis_title="Amplitude",
+        title=f"Signal around event at t = {ev_time:.2f} s",
+        height=340,
+        margin=dict(l=60, r=20, t=50, b=60),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.02),
+    )
+
+    st.plotly_chart(fig_zoom, use_container_width=True)
+
+    st.caption(
+        "Zoomed view around one event marker. "
+        "This helps to inspect local amplitude changes and recovery after the event."
+    )
+else:
+    st.warning(f"Event index {event_idx} is out of range. Only {len(events_df)} events found.")
+
+st.divider()
+
 #TODO do we need to cover anything for tasks 3 & 4 here? Or just say "will be added in the next iteration" and leave it at that?
 st.markdown("## Tasks 3 & 4 - Not yet covered")
 st.info(

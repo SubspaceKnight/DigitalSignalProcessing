@@ -176,15 +176,292 @@ st.markdown(
 
 
 st.divider()
-#TODO 
-st.markdown("## Tasks 3 & 4 - Not yet covered")
-st.info(
-    "**Task 3 - Event analysis**: the approach for extracting and characterizing "
-    "stimulus-locked responses will be described here once implemented.\n\n"
-    "**Task 4 - Downsampling**: the method for sub-sampling the signal at "
-    "multiple factors and evaluating the resulting spectral changes will be "
-    "described here once implemented."
+
+# -----------------------------
+# Task 3 - Event marker analysis
+# -----------------------------
+
+def analyze_event_plateaus(
+    sig_df,
+    events_df,
+    baseline_before_s=1.0,
+    search_after_s=5.0,
+    smooth_window=21,
+    plateau_window_s=0.4,
+    plateau_tolerance_fraction=0.15,
+):
+    df = sig_df.copy().reset_index(drop=True)
+
+    # slight smoothing
+    df["amp_smooth"] = (
+        df["amplitude"]
+        .rolling(window=smooth_window, center=True, min_periods=1)
+        .median()
+    )
+
+    dt = float(np.median(np.diff(df["time_s"])))
+    plateau_n = max(3, int(round(plateau_window_s / dt)))
+
+    results = []
+
+    for i, ev in events_df.iterrows():
+        ev_time = float(ev["onset_s"])
+
+        # 1 s before event = baseline window
+        base_mask = (
+            (df["time_s"] >= ev_time - baseline_before_s) &
+            (df["time_s"] < ev_time)
+        )
+
+        # 5 s after event = post-event window
+        post_mask = (
+            (df["time_s"] >= ev_time) &
+            (df["time_s"] <= ev_time + search_after_s)
+        )
+
+        base_seg = df.loc[base_mask]
+        post_seg = df.loc[post_mask].copy()
+
+        if len(base_seg) < 5 or len(post_seg) < plateau_n + 5:
+            results.append({
+                "event_idx": i,
+                "event_time_s": ev_time,
+                "baseline": np.nan,
+                "low_level": np.nan,
+                "drop_depth": np.nan,
+                "drop_percent": np.nan,
+                "time_to_low_plateau_s": np.nan,
+                "low_plateau_duration_s": np.nan,
+            })
+            continue
+
+        # baseline = median before event
+        baseline = float(base_seg["amp_smooth"].median())
+
+        # low level = median of lowest 20% after event
+        sorted_vals = np.sort(post_seg["amp_smooth"].values)
+        n_low = max(5, int(0.2 * len(sorted_vals)))
+        low_level = float(np.median(sorted_vals[:n_low]))
+
+        # drop measures
+        drop_depth = baseline - low_level
+        drop_percent = 100.0 * drop_depth / baseline if baseline != 0 else np.nan
+
+        # allowed variation around low level
+        tol = plateau_tolerance_fraction * drop_depth
+
+        post_vals = post_seg["amp_smooth"].values
+        post_times = post_seg["time_s"].values
+
+        plateau_start_idx = None
+        plateau_end_idx = None
+
+        # first interval that stays near the low level
+        for start in range(0, len(post_seg) - plateau_n + 1):
+            window = post_vals[start:start + plateau_n]
+            if np.all(np.abs(window - low_level) <= tol):
+                plateau_start_idx = start
+                break
+
+        if plateau_start_idx is None:
+            time_to_low_plateau = np.nan
+            low_plateau_duration = np.nan
+        else:
+            time_to_low_plateau = float(post_times[plateau_start_idx] - ev_time)
+
+            plateau_end_idx = plateau_start_idx + plateau_n - 1
+            for j in range(plateau_end_idx + 1, len(post_seg)):
+                if np.abs(post_vals[j] - low_level) <= tol:
+                    plateau_end_idx = j
+                else:
+                    break
+
+            low_plateau_duration = float(
+                post_times[plateau_end_idx] - post_times[plateau_start_idx]
+            )
+
+        results.append({
+            "event_idx": i,
+            "event_time_s": ev_time,
+            "baseline": baseline,
+            "low_level": low_level,
+            "drop_depth": drop_depth,
+            "drop_percent": drop_percent,
+            "time_to_low_plateau_s": time_to_low_plateau,
+            "low_plateau_duration_s": low_plateau_duration,
+        })
+
+    return pd.DataFrame(results)
+
+
+def plot_annotated_event(
+    sig_df,
+    events_df,
+    event_stats,
+    event_idx=4,
+    baseline_before_s=1.0,
+    search_after_s=5.0,
+    smooth_window=21,
+):
+    ev_time = float(events_df.iloc[event_idx]["onset_s"])
+    stats_row = event_stats.iloc[event_idx]
+
+    baseline = stats_row["baseline"]
+    low_level = stats_row["low_level"]
+    time_to_low_plateau = stats_row["time_to_low_plateau_s"]
+    low_plateau_duration = stats_row["low_plateau_duration_s"]
+
+    if pd.isna(baseline) or pd.isna(low_level) or pd.isna(time_to_low_plateau) or pd.isna(low_plateau_duration):
+        return None
+
+    plateau_start = ev_time + float(time_to_low_plateau)
+    plateau_end = plateau_start + float(low_plateau_duration)
+
+    t_min = ev_time - baseline_before_s - 0.5
+    t_max = ev_time + search_after_s + 0.5
+
+    seg = sig_df[(sig_df["time_s"] >= t_min) & (sig_df["time_s"] <= t_max)].copy()
+
+    seg["amp_smooth"] = (
+        seg["amplitude"]
+        .rolling(window=smooth_window, center=True, min_periods=1)
+        .median()
+    )
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=seg["time_s"],
+        y=seg["amplitude"],
+        mode="lines",
+        line=dict(color="rgba(100,149,237,0.45)", width=1),
+        name="Raw signal",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=seg["time_s"],
+        y=seg["amp_smooth"],
+        mode="lines",
+        line=dict(color="cornflowerblue", width=2),
+        name="Smoothed signal",
+    ))
+
+    fig.add_vrect(
+        x0=ev_time - baseline_before_s,
+        x1=ev_time,
+        fillcolor="lightgreen",
+        opacity=0.18,
+        line_width=0,
+        annotation_text="Baseline window",
+        annotation_position="top left",
+    )
+
+    fig.add_vrect(
+        x0=ev_time,
+        x1=ev_time + search_after_s,
+        fillcolor="orange",
+        opacity=0.10,
+        line_width=0,
+        annotation_text="Post-event window",
+        annotation_position="top right",
+    )
+
+    fig.add_vline(
+        x=ev_time,
+        line=dict(color="tomato", width=2, dash="dash"),
+        annotation_text="Event",
+        annotation_position="top",
+    )
+
+    fig.add_vline(
+        x=plateau_start,
+        line=dict(color="gold", width=2, dash="dot"),
+        annotation_text="Plateau start",
+        annotation_position="bottom left",
+    )
+
+    fig.add_vline(
+        x=plateau_end,
+        line=dict(color="gold", width=2, dash="dot"),
+        annotation_text="Plateau end",
+        annotation_position="bottom right",
+    )
+
+    fig.add_hline(
+        y=float(baseline),
+        line=dict(color="lightgreen", width=2, dash="dash"),
+        annotation_text=f"Baseline = {baseline:.3f}",
+        annotation_position="right",
+    )
+
+    fig.add_hline(
+        y=float(low_level),
+        line=dict(color="violet", width=2, dash="dash"),
+        annotation_text=f"Low level = {low_level:.3f}",
+        annotation_position="right",
+    )
+
+    fig.add_vrect(
+        x0=plateau_start,
+        x1=plateau_end,
+        fillcolor="violet",
+        opacity=0.14,
+        line_width=0,
+        annotation_text="Low plateau",
+        annotation_position="bottom left",
+    )
+
+    fig.update_layout(
+        title=f"Annotated event analysis at t = {ev_time:.2f} s",
+        xaxis_title="Time (s)",
+        yaxis_title="Amplitude",
+        height=430,
+        margin=dict(l=60, r=20, t=60, b=60),
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.02),
+    )
+
+    return fig
+
+
+# compute event stats once
+event_stats = analyze_event_plateaus(
+    sig_df,
+    events_df,
+    baseline_before_s=1.0,
+    search_after_s=5.0,
+    smooth_window=21,
+    plateau_window_s=0.4,
+    plateau_tolerance_fraction=0.15,
 )
 
-st.divider()
-st.caption("DSP Exercise 2 * FH Joanneum * 2026")
+st.markdown("## Methods - Example event")
+
+event_idx_plot = st.slider(
+    "Select event for annotated example",
+    min_value=0,
+    max_value=len(events_df) - 1,
+    value=min(4, len(events_df) - 1),
+    step=1,
+)
+
+fig_annot = plot_annotated_event(
+    sig_df=sig_df,
+    events_df=events_df,
+    event_stats=event_stats,
+    event_idx=event_idx_plot,
+    baseline_before_s=1.0,
+    search_after_s=5.0,
+    smooth_window=21,
+)
+
+if fig_annot is not None:
+    st.plotly_chart(fig_annot, use_container_width=True)
+    st.caption(
+        "Figure X. Example of the event-based analysis for one selected event. "
+        "The plot shows the 1 s baseline window before the marker, the 5 s post-event "
+        "analysis window, the estimated baseline, the estimated low level, the time "
+        "to low plateau, and the plateau duration."
+    )
+else:
+    st.warning("No valid plateau could be detected for this event with the current settings.")
