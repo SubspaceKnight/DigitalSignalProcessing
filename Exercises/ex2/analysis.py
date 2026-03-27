@@ -96,6 +96,40 @@ def run_full_spectrum(
         "N_raw":     N_raw,
         "fs_used":   round(fs_used, 4),
     }
+def run_segment_spectrum(
+    sig_df: pd.DataFrame,
+    fs: float,
+    n_samples: int = 4096,
+) -> dict:
+    """
+    Compute the DFT on the FIRST n_samples raw samples at the TRUE fs.
+ 
+    This is the correct way to get a spectrum that shows 0 … fs/2 Hz.
+    Sub-sampling the full signal (as done in run_full_spectrum) reduces the
+    effective fs and shrinks the visible frequency range — which is misleading.
+ 
+    Trade-off: frequency resolution = fs / n_samples.
+      n_samples=4096, fs=256 Hz → Δf = 0.0625 Hz (fine enough to resolve 50 Hz)
+ 
+    Returns
+    -------
+    dict: X, freqs, magnitude, power, N_used, fs
+    """
+    x = sig_df["amplitude"].values[:n_samples]
+    X = dft(x)
+    N = len(X)
+    freqs = frequency_bins(N, fs)
+    mag   = magnitude_spectrum(X)
+    pwr   = power_spectrum(X)
+ 
+    return {
+        "X":         X,
+        "freqs":     freqs,
+        "magnitude": mag,
+        "power":     pwr,
+        "N_used":    N,
+        "fs":        fs,
+    }
 
 
 #(task 2) Spectral peak detection + noise/signal classification  
@@ -149,3 +183,58 @@ def classify_peaks(peaks_df: pd.DataFrame) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+#(task 4) Downsampling analysis  
+def downsample_spectrum(
+    sig_df: pd.DataFrame,
+    factor: int,
+    fs_orig: float,
+    n_samples: int = 4096, ) -> dict:
+    """
+    Downsample the signal by *factor* (no anti-aliasing filter), then compute
+    the DFT on the first n_samples of the downsampled signal.
+ 
+    The new sampling rate is fs_new = fs_orig / factor.
+    The new Nyquist is fs_new / 2.
+ 
+    Any component that was above the new Nyquist in the original signal will
+    alias — it folds into the spectrum at a wrong lower frequency.
+ 
+    Returns
+    -------
+    dict: freqs, magnitude, fs_new, nyquist_new, n_used, factor
+    """
+    x_ds   = sig_df["amplitude"].values[::factor]   # keep every factor-th sample
+    fs_new = fs_orig / factor
+ 
+    # Take the first n_samples of the downsampled signal
+    x_seg = x_ds[:n_samples]
+    X     = dft(x_seg)
+    N     = len(X)
+    freqs = frequency_bins(N, fs_new)
+    mag   = magnitude_spectrum(X)
+ 
+    return {
+        "freqs":       freqs,
+        "magnitude":   mag,
+        "fs_new":      round(fs_new, 4),
+        "nyquist_new": round(fs_new / 2, 4),
+        "n_used":      N,
+        "factor":      factor,
+    }
+ 
+ 
+def aliased_frequency(f_true: float, fs_new: float) -> float:
+    """
+    Predict where a component at f_true Hz will appear after downsampling
+    to fs_new Hz (without an anti-aliasing filter).
+ 
+    The folding formula:
+        f_alias = | ((f_true + fs_new/2) mod fs_new) - fs_new/2 |
+ 
+    This wraps f_true into the range [0, fs_new/2] accounting for the
+    periodic nature of the DFT.
+    """
+    nyq = fs_new / 2
+    return round(abs(((f_true + nyq) % fs_new) - nyq), 4)

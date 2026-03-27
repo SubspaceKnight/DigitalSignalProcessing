@@ -96,7 +96,7 @@ st.markdown(
 #DFT of the actual signal 
 st.markdown("### What the DFT reveals - magnitude spectrum of the actual signal")
 
-spec_intro = analysis.run_full_spectrum(sig_df, fs, max_n=2048)
+spec_intro = analysis.run_segment_spectrum(sig_df, fs, 4096)#analysis.run_full_spectrum(sig_df, fs, max_n=2048)
 f_intro    = spec_intro["freqs"]
 m_intro    = spec_intro["magnitude"]
 
@@ -213,14 +213,18 @@ else:
 st.divider()
 
 #TODO do we need to cover anything for tasks 3 & 4 here? Or just say "will be added in the next iteration" and leave it at that?
-st.markdown("## Tasks 3 & 4 - Not yet covered")
-st.info(
-    "**Task 3 - Event analysis** and **Task 4 - Downsampling** will be added "
-    "in the next iteration.\n\n"
-    "Task 3 will introduce epoch analysis and the concept of stimulus-locked "
-    "responses (ERP / event-related activity).\n\n"
-    "Task 4 will explain downsampling, the resulting change in Nyquist frequency, "
-    "and how aliasing arises when no anti-aliasing filter is applied beforehand."
+# st.markdown("## Tasks 3 & 4 - Not yet covered")
+# st.info(
+#     "**Task 3 - Event analysis** and **Task 4 - Downsampling** will be added "
+#     "in the next iteration.\n\n"
+#     "Task 3 will introduce epoch analysis and the concept of stimulus-locked "
+#     "responses (ERP / event-related activity).\n\n"
+#     "Task 4 will explain downsampling, the resulting change in Nyquist frequency, "
+#     "and how aliasing arises when no anti-aliasing filter is applied beforehand."
+# )
+st.markdown("## Task 4 - Downsampling")
+st.markdown(
+    "Downsampling and aliasing are covered in the Results and Discussion pages."
 )
 
 st.divider()

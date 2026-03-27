@@ -24,7 +24,8 @@ stats = analysis.sampling_stats(sig_df)
 
 @st.cache_data
 def get_spec(max_n=2048):
-    return analysis.run_full_spectrum(sig_df, fs, max_n=max_n)
+    #return analysis.run_full_spectrum(sig_df, fs, max_n=max_n)
+    return analysis.run_segment_spectrum(sig_df, fs, n_samples=max_n)
 
 spec     = get_spec()
 peaks_df = analysis.find_spectral_peaks(spec["freqs"], spec["magnitude"], n_peaks=15, min_freq_hz=0.1)
@@ -210,6 +211,86 @@ while the strength of the drop varied more strongly. Overall, the event markers 
 a repeatable and non-random effect in the signal.
 """
 )
+
+
+st.markdown("## Task 4 - Downsampling: information loss and aliasing")
+ 
+# Recompute spectra for discussion
+_spec_orig = analysis.run_segment_spectrum(sig_df, fs, n_samples=4096)
+ 
+st.markdown(
+    """
+    ### What changes in the time domain
+ 
+    Keeping every M-th sample gives a coarser waveform. Rapid oscillations
+    that required many samples per cycle simply disappear — there are no
+    longer enough points to trace them. The signal looks smoother but
+    that smoothness is an artefact, not biology.
+ 
+    ### What changes in the frequency domain
+ 
+    The new Nyquist drops to fs / (2M). The spectrum is now blind to
+    everything above that limit. Worse: those lost components do not
+    disappear quietly. Without an anti-aliasing filter applied before
+    downsampling, their energy folds back into the visible range at wrong
+    frequencies. A 60 Hz component sampled at only 32 Hz (÷8 of 256)
+    has a new Nyquist of 16 Hz — that 60 Hz component will appear as an
+    alias somewhere between 0 and 16 Hz, indistinguishable from genuine
+    low-frequency content.
+ 
+    ### When does aliasing arise?
+ 
+    Aliasing arises the moment any component exceeds the new Nyquist:
+    $f_{\text{true}} > f_s / (2M)$. For this signal at 256 Hz:
+    """
+)
+ 
+# Alias table across all factors
+_factors = [2, 4, 8, 16, 32]
+_peaks   = analysis.find_spectral_peaks(_spec_orig["freqs"], _spec_orig["magnitude"],
+                                        n_peaks=8, min_freq_hz=0.5)
+alias_table = []
+for _M in _factors:
+    _fs_new  = fs / _M
+    _nyq_new = _fs_new / 2
+    for _, _r in _peaks.iterrows():
+        _f = _r["Frequency (Hz)"]
+        _above = _f > _nyq_new
+        alias_table.append({
+            "Factor M":          _M,
+            "New Nyquist (Hz)":  _nyq_new,
+            "Peak freq (Hz)":   _f,
+            "Aliases?":         "YES" if _above else "No",
+            "Alias appears at": round(analysis.aliased_frequency(_f, _fs_new), 3) if _above else "—",
+        })
+ 
+st.dataframe(pd.DataFrame(alias_table), use_container_width=True, hide_index=True)
+st.caption(
+    "At M=2 the Nyquist halves to 64 Hz — 50 Hz noise still fits below it. "
+    "At M=8 the Nyquist is 16 Hz — 50 Hz aliases to a wrong frequency. "
+    "At M=32 only content below 4 Hz survives unaliased."
+)
+ 
+st.markdown(
+    """
+    ### How to identify aliasing in the spectrum
+ 
+    - A peak appears **at a frequency that has no physiological explanation**
+      at that location.
+    - The peak **moves** when you change the downsample factor — its apparent
+      frequency shifts with the new Nyquist, whereas real signal peaks stay put.
+    - The aliased frequency can always be **predicted beforehand** using the
+      folding formula, so you never have to guess.
+ 
+    ### The solution
+ 
+    Apply a **low-pass anti-aliasing filter** at the new Nyquist *before*
+    downsampling. This removes all content that would alias, so the
+    downsampled signal contains only frequencies it can faithfully represent.
+    Without this step, downsampling is always lossy and potentially misleading.
+    """
+)
+
 
 st.divider()
 st.caption("DSP Exercise 2 • FH Joanneum • 2026")

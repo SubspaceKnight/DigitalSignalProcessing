@@ -24,12 +24,15 @@ fs    = helper.compute_fs(sig_df)
 stats = analysis.sampling_stats(sig_df)
 
 #sidebar
-st.sidebar.header("DFT settings")
-max_n_dft = st.sidebar.select_slider(
-    "Max samples sent to DFT",
+st.sidebar.header("Spectrum settings")
+n_seg = st.sidebar.select_slider(
+    "Samples used for DFT",
     options=[512, 1024, 2048, 4096],
-    value=2048,
-    help="Higher = more frequency resolution, slower computation (O(N²)).",
+    value=4096,
+    help=(
+        "All taken from the START of the recording at the true fs = "
+        f"{fs} Hz. More samples = finer frequency resolution."
+    ),
 )
 n_peaks       = st.sidebar.slider("Top peaks to highlight", 3, 20, 10)
 freq_limit    = st.sidebar.number_input(
@@ -39,7 +42,13 @@ freq_limit    = st.sidebar.number_input(
     value=float(stats["nyquist_hz"]),
     step=1.0,
 )
-
+st.sidebar.header("Downsampling settings")
+ds_factor = st.sidebar.select_slider(
+    "Downsample factor M",
+    options=[2, 4, 8, 16, 32],
+    value=4,
+    help="Keep every M-th sample. No anti-aliasing filter applied.",
+)
 #tabs
 tab_time, tab_spectrum, tab_events, tab_ds = st.tabs([
     "Time domain",
@@ -134,65 +143,82 @@ with tab_time:
 
 #TAB 2 Spectrum
 with tab_spectrum:
-    st.subheader("Task 2 - DFT: magnitude & power spectra")
-
+    st.subheader("Task 2 - DFT magnitude spectrum")
+ 
     @st.cache_data
-    def get_spectrum(max_n):
-        return analysis.run_full_spectrum(sig_df, fs, max_n=max_n)
-
-    spec  = get_spectrum(max_n_dft)
+    def get_spectrum(n):
+        return analysis.run_segment_spectrum(sig_df, fs, n_samples=n)
+ 
+    spec  = get_spectrum(n_seg)
     freqs = spec["freqs"]
     mag   = spec["magnitude"]
-
-    fmask  = freqs <= freq_limit
-    f_plot = freqs[fmask]
-    m_plot = mag[fmask]
-
-    if spec["N_raw"] > spec["N_used"]:
-        st.info(
-            f"Signal has {spec['N_raw']:,} samples. "
-            f"DFT computed on {spec['N_used']:,} sub-sampled points "
-            f"(effective fs = {spec['fs_used']} Hz) to keep O(N²) tractable. "
-            "Increase 'Max samples' in the sidebar for finer resolution."
-        )
-
-    #magnitude spectrum is enough for this analysis, but power spectrum is also available in spec["power"] if needed for Task 3 or 4; for later - analysis.run_full_spectrum() for the full DFT pipeline implementation
-    st.markdown("### Magnitude spectrum")
+ 
+    st.info(
+        f"DFT computed on the **first {n_seg} samples** at the true fs = {fs} Hz. "
+        f"Frequency range: 0 - {fs/2:.0f} Hz · "
+        f"Frequency resolution: {fs/n_seg:.4f} Hz per bin."
+    )
+ 
+    #magnitude spectrum 
     fig_mag = go.Figure()
     fig_mag.add_trace(go.Scatter(
-        x=f_plot, y=m_plot, mode="lines",
+        x=freqs, y=mag, mode="lines",
         line=dict(color="cornflowerblue", width=1.2),
         fill="tozeroy", fillcolor="rgba(100,149,237,0.10)",
         name="|X[k]| / N",
     ))
     fig_mag.update_layout(
         xaxis_title="Frequency (Hz)", yaxis_title="Magnitude (normalised)",
-        title=f"DFT Magnitude Spectrum  (N = {spec['N_used']:,})",
+        title=f"DFT Magnitude Spectrum  (N = {n_seg})",
         height=340, margin=dict(l=60, r=20, t=50, b=60),
         hovermode="x unified",
     )
     st.plotly_chart(fig_mag, use_container_width=True)
-
-
-    #peak table 
-    st.markdown("### Top spectral peaks")
+ 
+    #peak table
+    st.markdown("### Top spectral peaks - signal vs noise")
     peaks_df = analysis.find_spectral_peaks(freqs, mag, n_peaks=n_peaks, min_freq_hz=0.5)
     clf_df   = analysis.classify_peaks(peaks_df)
-
-    #Colour-coded display
+ 
     def row_style(r):
         if "Noise" in str(r["Classification"]):
             return ["background-color: rgba(255,80,80,0.12)"] * len(r)
         elif "DC" in str(r["Classification"]):
             return ["background-color: rgba(255,200,80,0.15)"] * len(r)
-        else:
-            return ["background-color: rgba(60,179,113,0.10)"] * len(r)
-
+        return ["background-color: rgba(60,179,113,0.10)"] * len(r)
+ 
     st.dataframe(
         clf_df.style.apply(row_style, axis=1),
         use_container_width=True, hide_index=True,
     )
-    st.caption("GREEN Candidate signal  *  RED Noise (mains/harmonic)  *  YELLOW DC / drift") #at the moment only signal
+    st.caption("🟢 Candidate signal  •  🔴 Noise (mains/harmonic)  •  🟡 DC / drift")
+ 
+    #annotated spectrum
+    fig_ann = go.Figure()
+    fig_ann.add_trace(go.Scatter(
+        x=freqs, y=mag, mode="lines",
+        line=dict(color="cornflowerblue", width=1.2),
+        fill="tozeroy", fillcolor="rgba(100,149,237,0.08)",
+        name="Magnitude",
+    ))
+    for _, r in clf_df.iterrows():
+        color = (
+            "tomato"         if "Noise"  in str(r["Classification"]) else
+            "goldenrod"      if "DC"     in str(r["Classification"]) else
+            "mediumseagreen"
+        )
+        fig_ann.add_vline(
+            x=r["Frequency (Hz)"], line=dict(color=color, dash="dot", width=1.2),
+            annotation_text=f"{r['Frequency (Hz)']} Hz",
+            annotation_font=dict(color=color, size=9),
+        )
+    fig_ann.update_layout(
+        xaxis_title="Frequency (Hz)", yaxis_title="Magnitude",
+        title="Annotated spectrum — green = signal · red = noise · gold = DC",
+        height=360, margin=dict(l=60, r=20, t=50, b=60),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig_ann, use_container_width=True) #at the moment only signal
 
 
 
@@ -358,12 +384,151 @@ with tab_events:
     st.dataframe(summary_df, use_container_width=True)
 
 #TODO  TAB 4 Downsampling  (Task 4 - not yet implemented)
+# with tab_ds:
+#     st.info(
+#         "**Task 4 - Downsampling** has not been implemented yet.\n\n"
+#         "Planned: downsample the signal at multiple factors (without filtering), "
+#         "show the effect on the time-domain waveform and the frequency spectrum, "
+#         "and explain when and where aliasing arises."
+#     )
+
+#(task 4) TAB 4 – Downsampling  
 with tab_ds:
-    st.info(
-        "**Task 4 - Downsampling** has not been implemented yet.\n\n"
-        "Planned: downsample the signal at multiple factors (without filtering), "
-        "show the effect on the time-domain waveform and the frequency spectrum, "
-        "and explain when and where aliasing arises."
+    st.subheader("Task 4 - Downsampling without anti-aliasing filter")
+ 
+    fs_new  = fs / ds_factor
+    nyq_new = fs_new / 2
+ 
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Original fs",    f"{fs} Hz")
+    c2.metric(f"New fs  (÷{ds_factor})", f"{fs_new:.2f} Hz",
+              delta=f"-{fs - fs_new:.1f} Hz", delta_color="inverse")
+    c3.metric("New Nyquist",    f"{nyq_new:.2f} Hz",
+              delta=f"was {fs/2:.0f} Hz", delta_color="inverse")
+    c4.metric("Samples kept",
+              f"{len(sig_df) // ds_factor:,}",
+              delta=f"of {len(sig_df):,}", delta_color="off")
+ 
+    #time domain: original vs downsampled
+    st.markdown("### Time domain — original vs downsampled")
+    st.markdown(
+        f"Keeping every **{ds_factor}th** sample. The waveform becomes coarser; "
+        f"oscillations faster than {nyq_new:.1f} Hz can no longer be represented."
     )
+ 
+    t_end_zoom = float(sig_df["time_s"].iloc[0]) + 0.5   # show first 0.5 s
+    orig_zoom  = sig_df[sig_df["time_s"] <= t_end_zoom]
+    ds_df      = helper.downsample(sig_df, ds_factor)
+    ds_zoom    = ds_df[ds_df["time_s"] <= t_end_zoom]
+ 
+    fig_td = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            f"Original  (fs = {fs} Hz)",
+            f"Downsampled ÷{ds_factor}  (fs = {fs_new:.1f} Hz)",
+        ),
+    )
+    fig_td.add_trace(go.Scatter(
+        x=orig_zoom["time_s"], y=orig_zoom["amplitude"],
+        mode="lines+markers", marker=dict(size=3),
+        line=dict(color="cornflowerblue", width=1.5), name="Original",
+    ), row=1, col=1)
+    fig_td.add_trace(go.Scatter(
+        x=ds_zoom["time_s"], y=ds_zoom["amplitude"],
+        mode="lines+markers", marker=dict(size=6),
+        line=dict(color="coral", width=1.5), name=f"÷{ds_factor}",
+    ), row=1, col=2)
+    fig_td.update_layout(
+        height=300, showlegend=False,
+        margin=dict(l=50, r=20, t=60, b=50),
+    )
+    fig_td.update_xaxes(title_text="Time (s)")
+    fig_td.update_yaxes(title_text="Amplitude", row=1, col=1)
+    st.plotly_chart(fig_td, use_container_width=True)
+    st.caption(
+        "Left: all samples at 256 Hz — fine temporal resolution. "
+        f"Right: every {ds_factor}th sample only — gaps appear, "
+        "rapid oscillations are lost or misrepresented."
+    )
+ 
+    #frequency domain: original vs downsampled
+    st.markdown("### Frequency domain — original vs downsampled")
+    st.markdown(
+        f"The new Nyquist is **{nyq_new:.1f} Hz**. "
+        "Any original component above this limit cannot be represented — "
+        "it folds back into the spectrum as an alias at a wrong lower frequency."
+    )
+ 
+    @st.cache_data
+    def get_ds_spectrum(factor, n):
+        return analysis.downsample_spectrum(sig_df, factor, fs, n_samples=n)
+ 
+    spec_orig = get_spectrum(n_seg)
+    spec_ds   = get_ds_spectrum(ds_factor, n_seg)
+ 
+    fig_fd = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            f"Original spectrum  (Nyquist = {fs/2:.0f} Hz)",
+            f"After ÷{ds_factor}  (Nyquist = {nyq_new:.1f} Hz)",
+        ),
+    )
+    fig_fd.add_trace(go.Scatter(
+        x=spec_orig["freqs"], y=spec_orig["magnitude"], mode="lines",
+        line=dict(color="cornflowerblue", width=1.2),
+        fill="tozeroy", fillcolor="rgba(100,149,237,0.10)", name="Original",
+    ), row=1, col=1)
+    fig_fd.add_trace(go.Scatter(
+        x=spec_ds["freqs"], y=spec_ds["magnitude"], mode="lines",
+        line=dict(color="coral", width=1.2),
+        fill="tozeroy", fillcolor="rgba(255,127,80,0.10)", name=f"÷{ds_factor}",
+    ), row=1, col=2)
+    #Mark new Nyquist on both panels
+    for col_idx in [1, 2]:
+        fig_fd.add_vline(
+            x=nyq_new, line=dict(color="tomato", dash="dash", width=1.5),
+            annotation_text=f"New Nyquist {nyq_new:.1f} Hz",
+            annotation_font=dict(color="tomato", size=10),
+            row=1, col=col_idx,
+        )
+    fig_fd.update_layout(
+        height=340, showlegend=False,
+        margin=dict(l=50, r=20, t=60, b=50),
+    )
+    fig_fd.update_xaxes(title_text="Frequency (Hz)")
+    fig_fd.update_yaxes(title_text="Magnitude", row=1, col=1)
+    st.plotly_chart(fig_fd, use_container_width=True)
+    st.caption(
+        "Red dashed line = new Nyquist. "
+        "Components to the RIGHT of this line in the original spectrum "
+        "cannot survive downsampling without aliasing. "
+        "The downsampled spectrum may show new peaks that weren't there before — those are aliases."
+    )
+ 
+    #alias prediction table 
+    st.markdown("### Alias prediction for top original peaks")
+    peaks_orig = analysis.find_spectral_peaks(
+        spec_orig["freqs"], spec_orig["magnitude"], n_peaks=12, min_freq_hz=0.5
+    )
+    alias_rows = []
+    for _, r in peaks_orig.iterrows():
+        f_t    = r["Frequency (Hz)"]
+        above  = f_t > nyq_new
+        f_a    = analysis.aliased_frequency(f_t, fs_new) if above else None
+        alias_rows.append({
+            "Original freq (Hz)": f_t,
+            "Magnitude":          r["Magnitude"],
+            "Above new Nyquist?": "YES" if above else "No",
+            "Predicted alias (Hz)": round(f_a, 3) if f_a is not None else "—",
+        })
+ 
+    alias_df = pd.DataFrame(alias_rows)
+    st.dataframe(alias_df, use_container_width=True, hide_index=True)
+    st.caption(
+        "YES = this component is above the new Nyquist and will alias. "
+        "Its energy will appear at the 'Predicted alias' frequency in the downsampled spectrum."
+    )
+
+
 st.divider()
 st.caption("DSP Exercise 2 * FH Joanneum * 2026")
