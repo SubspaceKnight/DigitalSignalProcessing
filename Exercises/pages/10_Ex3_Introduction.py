@@ -4,12 +4,11 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
-import Exercises.ex3.analysis as analysis
-
 sys.path.append(str(Path(__file__).parent.parent))
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+import Exercises.ex3.analysis as analysis
 
 st.set_page_config(page_title="Ex3 - Introduction", layout="wide")
 st.title("Introduction - Time-Frequency Analysis & the STFT")
