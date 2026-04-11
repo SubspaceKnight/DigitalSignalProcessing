@@ -1,14 +1,15 @@
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import pandas as pd
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-import Exercises.ex3.analysis as analysis
+
+APP_DIR = Path(__file__).resolve().parent.parent  # -> Exercises
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from ex3 import helper, analysis
 
 st.set_page_config(page_title="Ex3 - Introduction", layout="wide")
 st.title("Introduction - Time-Frequency Analysis & the STFT")
@@ -39,7 +40,7 @@ st.markdown(
     r"""
     ## The Short-Time Fourier Transform
 
-    The STFT divides the signal into short, overlapping frames and applies the DFT/FFT to each:
+    The STFT divides the signal into short, overlapping frames and applies the DFT to each frame:
 
     $$
     X[k, m] = \sum_{n=0}^{L-1} x[mH + n] \cdot w[n] \cdot e^{-j\,2\pi\,k\,n\,/\,L}
@@ -77,8 +78,6 @@ st.markdown(
     """
 )
 
-#TODO: add a simple plot of a two-tone signal and its STFT spectrogram with different window lengths to visually demonstrate the trade-off.
-#Demo: two sinusoids with different window lengths
 st.markdown("### Interactive demo — effect of window length on a two-tone signal")
 
 fs_demo = 8000
@@ -162,7 +161,7 @@ st.markdown(
 #Plot all window shapes side by side
 L_win = 256
 fig_win = go.Figure()
-colors = ["cornflowerblue", "coral", "mediumseagreen", "goldenrod"] #I wanna make them look nice and distinct, but feel free to change:) maybe use a color palette library like seaborn or plotly.express for more options
+colors = ["cornflowerblue", "coral", "mediumseagreen", "goldenrod"] 
 for name, color in zip(analysis.WINDOW_FUNCTIONS, colors):
     w = analysis.get_window(name, L_win)
     fig_win.add_trace(go.Scatter(

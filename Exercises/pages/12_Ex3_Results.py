@@ -1,251 +1,527 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-import Exercises.ex3.helper   as helper
-import Exercises.ex3.analysis as analysis
+
+APP_DIR = Path(__file__).resolve().parent.parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from ex3 import helper, analysis
 
 st.set_page_config(page_title="Ex3 - Results", layout="wide")
 st.title("Results - STFT Analysis of Music Recordings")
 
-#Sidebar controls
-st.sidebar.header("STFT settings")
 
+# --------------------------------------------------
+# Helper functions
+# --------------------------------------------------
+def seconds_to_mmss(seconds: float) -> str:
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m:02d}:{s:02d}"
+
+
+def compute_hop_from_overlap(win_length: int, overlap_percent: int) -> int:
+    hop = int(round(win_length * (1 - overlap_percent / 100)))
+    return max(1, hop)
+
+
+def make_heatmap(x, y, z, title, x_title, y_title, z_title=""):
+    fig = go.Figure(
+        data=go.Heatmap(
+            x=x,
+            y=y,
+            z=z,
+            colorscale="Viridis",
+            colorbar=dict(title=z_title),
+        )
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        height=520,
+        margin=dict(l=60, r=20, t=60, b=60),
+    )
+    return fig
+
+
+def make_line_plot(x, y, title, x_title, y_title):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines"))
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        height=320,
+        margin=dict(l=60, r=20, t=60, b=60),
+    )
+    return fig
+
+
+def band_summary_df(song_name: str, band_results: dict) -> pd.DataFrame:
+    rows = []
+    for label, values in band_results.items():
+        rows.append(
+            {
+                "Song": song_name,
+                "Band": label,
+                "Mean relative band energy": round(values["EB_mean"], 4),
+                "Number of frequency bins": len(values["indices"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------
+# Load files
+# --------------------------------------------------
 audio_files = helper.list_audio_files()
 
 if not audio_files:
-    st.warning(
-        "No audio files found in `data/audio/`. "
-        "Add `.wav` or `.mp3` files there and reload."
-    )
+    st.info("No audio files found in `ex3/data/audio/`.")
     st.stop()
 
-selected_file = st.sidebar.selectbox("Recording", options=audio_files)
+# --------------------------------------------------
+# Controls
+# --------------------------------------------------
+st.markdown("## STFT settings")
 
-window_name = st.sidebar.selectbox(
-    "Window function",
-    options=analysis.WINDOW_FUNCTIONS,
-    index=0,
-)
-win_length = st.sidebar.select_slider(
-    "Window length (samples)",
-    options=[256, 512, 1024, 2048, 4096],
-    value=1024,
-)
-overlap_pct = st.sidebar.slider("Overlap (%)", min_value=0, max_value=90, value=50, step=10)
-hop_length  = max(1, int(win_length * (1 - overlap_pct / 100)))
+col1, col2, col3 = st.columns(3)
 
-st.sidebar.markdown(
-    f"**Δf** = {0:.0f} Hz  *(fill when fs known)*  \n"
-    f"**Δt** = {hop_length} samples"
-)
+with col1:
+    selected_file = st.selectbox("Recording", audio_files)
 
-st.sidebar.header("Spectrogram view")
-repr_mode = st.sidebar.radio(
-    "Y-axis representation",
-    options=["Magnitude", "Power", "dB", "Mel"],
-    index=2,
-)
-n_mels = st.sidebar.slider("Mel bins (Mel mode only)", 32, 256, 128, 32)
+with col2:
+    window_name = st.selectbox(
+        "Window function",
+        options=["hann", "hamming", "blackman", "rectangular"],
+        index=0,
+    )
 
-st.sidebar.header("Time segment")
+with col3:
+    y_mode = st.selectbox(
+        "Y-axis representation",
+        options=["Magnitude", "Power", "dB", "Mel"],
+        index=2,
+    )
 
+col4, col5, col6 = st.columns(3)
 
-#Load audio
-@st.cache_data
-def load(fname):
-    return helper.load_audio(fname)
+with col4:
+    win_length = st.slider(
+        "Window length (samples)",
+        min_value=256,
+        max_value=4096,
+        step=256,
+        value=2048,
+    )
 
-audio = load(selected_file)
+with col5:
+    overlap_percent = st.slider(
+        "Overlap (%)",
+        min_value=0,
+        max_value=90,
+        step=10,
+        value=50,
+    )
+
+with col6:
+    n_mels = st.slider(
+        "Mel bins (Mel mode only)",
+        min_value=32,
+        max_value=256,
+        step=32,
+        value=128,
+    )
+
+hop_length = compute_hop_from_overlap(win_length, overlap_percent)
+
+# --------------------------------------------------
+# Load selected audio
+# --------------------------------------------------
+audio = helper.load_audio(selected_file, mono=True)
+
 if not audio:
     st.stop()
 
-info = helper.audio_info_df(audio)
-c1, c2, c3, c4, c5 = st.columns(5)
-for col, (k, v) in zip([c1, c2, c3, c4, c5], list(info.items())[:5]):
-    col.metric(k, v)
+samples = audio["samples"]
+sr = audio["sr"]
+duration = audio["duration"]
 
-t_start = st.sidebar.slider(
-    "Start (s)", 0.0, max(0.0, audio["duration"] - 1.0), 0.0, 0.1
-)
-t_end   = st.sidebar.slider(
-    "End (s)", 1.0, audio["duration"], min(30.0, audio["duration"]), 0.1
-)
+delta_f = sr / win_length
+delta_t_ms = 1000 * hop_length / sr
 
-#Compute STFT
-sr  = audio["sr"]
-seg = audio["samples"][int(t_start * sr) : int(t_end * sr)]
-
-@st.cache_data
-def compute_stft(fname, t0, t1, wname, wlen, hlen):
-    a   = helper.load_audio(fname)
-    seg = a["samples"][int(t0 * a["sr"]) : int(t1 * a["sr"])]
-    return analysis.stft(seg, a["sr"], window_name=wname,
-                         win_length=wlen, hop_length=hlen)
-
-stft_result = compute_stft(
-    selected_file, t_start, t_end, window_name, win_length, hop_length
+st.markdown(
+    f"""
+**Sample rate:** {sr} Hz  
+**Duration:** {duration:.2f} s ({seconds_to_mmss(duration)})  
+**Window:** {window_name}  
+**Window length:** {win_length} samples  
+**Hop length:** {hop_length} samples  
+**Overlap:** {overlap_percent}%  
+**Δf:** {delta_f:.2f} Hz  
+**Δt:** {delta_t_ms:.2f} ms
+"""
 )
 
-st.info(
-    f"Segment: {t_start:.1f} - {t_end:.1f} s · "
-    f"Frames: {stft_result['n_frames']} · "
-    f"Freq bins: {stft_result['n_freqs']} · "
-    f"Δf ≈ {sr / win_length:.2f} Hz · "
-    f"Δt ≈ {hop_length / sr * 1000:.1f} ms"
-)
+# --------------------------------------------------
+# Audio player
+# --------------------------------------------------
+st.markdown("## Audio playback")
 
-#Tabs
-tab_spec, tab_bands, tab_metrics = st.tabs(["Spectrogram", "Band energy", "Additional metrics"])
+audio_path = helper.DATA_DIR / selected_file
+audio_format = "audio/wav"
+suffix = audio_path.suffix.lower()
 
-#TAB 1: Spectrogram
-with tab_spec:
-    st.subheader(f"Spectrogram — {repr_mode} · {selected_file}")
+if suffix == ".mp3":
+    audio_format = "audio/mp3"
+elif suffix == ".ogg":
+    audio_format = "audio/ogg"
+elif suffix == ".flac":
+    audio_format = "audio/flac"
+elif suffix == ".m4a":
+    audio_format = "audio/mp4"
+elif suffix == ".aiff":
+    audio_format = "audio/aiff"
 
-    times = stft_result["times"] + t_start
-    freqs = stft_result["freqs"]
-    mag = stft_result["magnitude"]
-    pwr = stft_result["power"]
+with open(audio_path, "rb") as f:
+    st.audio(f.read(), format=audio_format)
 
-    if repr_mode == "Magnitude":
-        z = mag
-        z_label = "Magnitude"
-        colorscale = "Viridis"
-        zmin = None 
-        zmax = None
-    elif repr_mode == "Power":
-        z = pwr
-        z_label = "Power"
-        colorscale = "Viridis"
-        zmin = None
-        zmax = None
-    elif repr_mode == "dB":
-        z = analysis.to_db(mag)
-        z_label = "Magnitude (dB)"
-        colorscale = "Magma"
-        zmin = z.max() - 80
-        zmax = z.max()
-    else:  # Mel
-        mel_out = analysis.to_mel(pwr, sr, freqs, n_mels=n_mels)
-        z = analysis.to_db(np.sqrt(mel_out["mel_spec"]))
-        freqs = mel_out["mel_freqs"]
-        z_label = "Mel power (dB)"
-        colorscale = "Magma"
-        zmin = z.max() - 80
-        zmax = z.max()
+# --------------------------------------------------
+# Time segment
+# --------------------------------------------------
+st.markdown("## Time segment")
 
-    fig_spec = go.Figure(go.Heatmap(
-        x=times,
-        y=freqs,
-        z=z,
-        colorscale=colorscale,
-        zmin=zmin, zmax=zmax,
-        colorbar=dict(title=z_label),
-    ))
-    fig_spec.update_layout(
-        xaxis_title="Time (s)",
-        yaxis_title="Frequency (Hz)" if repr_mode != "Mel" else "Mel frequency (Hz)",
-        title=(
-            f"{repr_mode} spectrogram · window = {window_name} · "
-            f"L = {win_length} · hop = {hop_length}"
-        ),
-        height=420,
-        margin=dict(l=60, r=20, t=50, b=60),
-        hovermode="closest",
-    )
-    st.plotly_chart(fig_spec, use_container_width=True)
-    st.caption(
-        f"Window: {window_name} · Length: {win_length} samples "
-        f"({win_length / sr * 1000:.1f} ms) · "
-        f"Overlap: {overlap_pct}% · Hop: {hop_length} samples "
-        f"({hop_length / sr * 1000:.1f} ms)"
+seg_col1, seg_col2 = st.columns(2)
+
+with seg_col1:
+    start_time = st.slider(
+        "Start time (s)",
+        min_value=0.0,
+        max_value=float(duration),
+        value=0.0,
+        step=0.5,
     )
 
-    # TODO: add a second recording for side-by-side comparison once chosen
-
-
-#TAB 2: Band energy
-with tab_bands:
-    st.subheader("Band energy features")
-
-    #TODO: adjust band boundaries to suit our recordings' frequency range
-    nyq = sr // 2
-    default_bands = [(0, 250), (250, 2000), (2000, 8000), (8000, nyq)]
-
-    st.markdown(
-        "Default bands (adjust in code once our recordings are analysed):"
+with seg_col2:
+    end_time = st.slider(
+        "End time (s)",
+        min_value=0.0,
+        max_value=float(duration),
+        value=float(duration),
+        step=0.5,
     )
-    band_results = analysis.compute_band_energy(stft_result, default_bands)
-    summary_df   = analysis.band_energy_summary_df(band_results)
-    st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
-    #Time-series of relative band energy
-    fig_bands = go.Figure()
-    colors_b = ["cornflowerblue", "coral", "mediumseagreen", "goldenrod"]
-    for (label, res), color in zip(band_results.items(), colors_b):
-        fig_bands.add_trace(go.Scatter(
-            x=stft_result["times"] + t_start,
-            y=res["EB_rel"],
+if end_time <= start_time:
+    st.error("End time must be greater than start time.")
+    st.stop()
+
+start_sample = int(start_time * sr)
+end_sample = int(end_time * sr)
+segment = samples[start_sample:end_sample]
+
+if len(segment) < win_length:
+    st.error("Selected time segment is shorter than the chosen window length.")
+    st.stop()
+
+# --------------------------------------------------
+# STFT
+# --------------------------------------------------
+st.markdown("## Spectrogram")
+
+stft_result = analysis.stft(
+    segment,
+    sr=sr,
+    window_name=window_name,
+    win_length=win_length,
+    hop_length=hop_length,
+)
+
+times = stft_result["times"] + start_time
+freqs = stft_result["freqs"]
+
+if y_mode == "Magnitude":
+    z = stft_result["magnitude"]
+    y_axis = freqs
+    y_title = "Frequency (Hz)"
+    z_title = "Magnitude"
+    spec_title = f"Magnitude spectrogram — {selected_file}"
+
+elif y_mode == "Power":
+    z = stft_result["power"]
+    y_axis = freqs
+    y_title = "Frequency (Hz)"
+    z_title = "Power"
+    spec_title = f"Power spectrogram — {selected_file}"
+
+elif y_mode == "dB":
+    z = analysis.to_db(
+        stft_result["magnitude"],
+        ref=np.max(stft_result["magnitude"]) + 1e-12
+    )
+    y_axis = freqs
+    y_title = "Frequency (Hz)"
+    z_title = "dB"
+    spec_title = f"dB spectrogram — {selected_file}"
+
+else:
+    mel_result = analysis.to_mel(
+        stft_result["power"],
+        sr=sr,
+        freqs=freqs,
+        n_mels=n_mels,
+        fmin=0.0,
+        fmax=sr / 2,
+    )
+    z = mel_result["mel_spec"]
+    z = 10 * np.log10(np.maximum(z, 1e-12))
+    y_axis = mel_result["mel_freqs"]
+    y_title = "Mel frequency (Hz)"
+    z_title = "Mel power (dB)"
+    spec_title = f"Mel spectrogram — {selected_file}"
+
+fig_spec = make_heatmap(
+    x=times,
+    y=y_axis,
+    z=z,
+    title=spec_title,
+    x_title="Time (s)",
+    y_title=y_title,
+    z_title=z_title,
+)
+
+st.plotly_chart(fig_spec, width="stretch")
+
+st.markdown(
+    """
+The spectrogram visualises how the spectral content changes over time. Horizontal structures
+suggest more sustained harmonic components, while vertical bright stripes indicate transient
+events such as drum hits or other abrupt changes in the signal.
+"""
+)
+
+# --------------------------------------------------
+# Spectrum overview
+# --------------------------------------------------
+st.markdown("## Average spectrum of the selected segment")
+
+avg_mag = np.mean(stft_result["magnitude"], axis=1)
+
+fig_avg_spec = go.Figure()
+fig_avg_spec.add_trace(
+    go.Scatter(
+        x=freqs,
+        y=avg_mag,
+        mode="lines",
+        name="Average magnitude spectrum",
+    )
+)
+fig_avg_spec.update_layout(
+    title="Average spectrum over the selected segment",
+    xaxis_title="Frequency (Hz)",
+    yaxis_title="Average magnitude",
+    height=350,
+    margin=dict(l=60, r=20, t=60, b=60),
+)
+st.plotly_chart(fig_avg_spec, width="stretch")
+
+# --------------------------------------------------
+# Band energy
+# --------------------------------------------------
+st.markdown("## Band energy features")
+
+st.caption(
+    "The band limits were chosen after inspecting the spectrograms and average spectra of the recordings. "
+    "They separate bass-dominated, mid-range, upper-mid, and very high-frequency content."
+)
+
+bands = [
+    (0, 250),
+    (250, 2000),
+    (2000, 8000),
+    (8000, sr / 2),
+]
+
+band_results = analysis.compute_band_energy(stft_result, bands)
+band_df = band_summary_df(selected_file, band_results)
+
+st.dataframe(band_df, width="stretch", hide_index=True)
+
+fig_band = go.Figure()
+
+for label, values in band_results.items():
+    fig_band.add_trace(
+        go.Scatter(
+            x=times,
+            y=values["EB_rel"],
             mode="lines",
-            line=dict(color=color, width=1.2),
             name=label,
-        ))
-    fig_bands.update_layout(
-        xaxis_title="Time (s)",
-        yaxis_title="Relative band energy",
-        title="Relative band energy over time",
-        height=340,
-        margin=dict(l=60, r=20, t=50, b=60),
-        hovermode="x unified",
-        legend=dict(orientation="h", y=1.02),
+        )
     )
-    st.plotly_chart(fig_bands, use_container_width=True)
 
-    #TODO: add comparison across recordings once both songs are loaded
+fig_band.update_layout(
+    title="Relative band energy over time",
+    xaxis_title="Time (s)",
+    yaxis_title="Relative band energy",
+    height=420,
+    margin=dict(l=60, r=20, t=60, b=60),
+)
 
+st.plotly_chart(fig_band, width="stretch")
 
-#TAB 3: Additional metrics
-with tab_metrics:
-    st.subheader("Additional metrics")
+# --------------------------------------------------
+# Additional metrics
+# --------------------------------------------------
+st.markdown("## Additional spectral metrics")
 
-    sc = analysis.spectral_centroid(stft_result)
-    sf = analysis.spectral_flatness(stft_result)
-    t_ax = stft_result["times"] + t_start
+centroid = analysis.spectral_centroid(stft_result)
+flatness = analysis.spectral_flatness(stft_result)
 
-    fig_m = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
-        subplot_titles=("Spectral centroid (Hz)", "Spectral flatness"),
+metric_df = pd.DataFrame(
+    [
+        {
+            "Metric": "Mean spectral centroid (Hz)",
+            "Value": round(float(np.mean(centroid)), 2),
+        },
+        {
+            "Metric": "Std spectral centroid (Hz)",
+            "Value": round(float(np.std(centroid)), 2),
+        },
+        {
+            "Metric": "Mean spectral flatness",
+            "Value": round(float(np.mean(flatness)), 4),
+        },
+        {
+            "Metric": "Std spectral flatness",
+            "Value": round(float(np.std(flatness)), 4),
+        },
+    ]
+)
+
+st.dataframe(metric_df, width="stretch", hide_index=True)
+
+col_m1, col_m2 = st.columns(2)
+
+with col_m1:
+    fig_centroid = make_line_plot(
+        x=times,
+        y=centroid,
+        title="Spectral centroid over time",
+        x_title="Time (s)",
+        y_title="Centroid (Hz)",
     )
-    fig_m.add_trace(go.Scatter(
-        x=t_ax, y=sc, mode="lines",
-        line=dict(color="cornflowerblue", width=1.2), name="Centroid",
-    ), row=1, col=1)
-    fig_m.add_trace(go.Scatter(
-        x=t_ax, y=sf, mode="lines",
-        line=dict(color="coral", width=1.2), name="Flatness",
-    ), row=2, col=1)
-    fig_m.update_xaxes(title_text="Time (s)", row=2, col=1)
-    fig_m.update_yaxes(title_text="Hz",   row=1, col=1)
-    fig_m.update_yaxes(title_text="0-1",  row=2, col=1)
-    fig_m.update_layout(
-        height=440,
+    st.plotly_chart(fig_centroid, width="stretch")
+
+with col_m2:
+    fig_flatness = make_line_plot(
+        x=times,
+        y=flatness,
+        title="Spectral flatness over time",
+        x_title="Time (s)",
+        y_title="Flatness",
+    )
+    st.plotly_chart(fig_flatness, width="stretch")
+
+# --------------------------------------------------
+# Comparison of both songs
+# --------------------------------------------------
+st.markdown("## Comparison of both recordings")
+
+comparison_rows = []
+
+for fname in audio_files:
+    a = helper.load_audio(fname, mono=True)
+    if not a:
+        continue
+
+    x = a["samples"]
+
+    if len(x) < 2048:
+        continue
+
+    res = analysis.stft(
+        x,
+        sr=a["sr"],
+        window_name="hann",
+        win_length=2048,
+        hop_length=1024,
+    )
+
+    band_res = analysis.compute_band_energy(
+        res,
+        [
+            (0, 250),
+            (250, 2000),
+            (2000, 8000),
+            (8000, a["sr"] / 2),
+        ],
+    )
+
+    centroid_all = analysis.spectral_centroid(res)
+    flatness_all = analysis.spectral_flatness(res)
+
+    row = {
+        "Recording": fname,
+        "Mean centroid (Hz)": round(float(np.mean(centroid_all)), 2),
+        "Mean flatness": round(float(np.mean(flatness_all)), 4),
+    }
+
+    for label, values in band_res.items():
+        row[label] = round(values["EB_mean"], 4)
+
+    comparison_rows.append(row)
+
+if comparison_rows:
+    comparison_df = pd.DataFrame(comparison_rows)
+    st.dataframe(comparison_df, width="stretch", hide_index=True)
+
+    # grouped bar plot for band energies
+    band_labels = [c for c in comparison_df.columns if c not in ["Recording", "Mean centroid (Hz)", "Mean flatness"]]
+
+    fig_cmp_bands = go.Figure()
+    for _, row in comparison_df.iterrows():
+        fig_cmp_bands.add_trace(
+            go.Bar(
+                x=band_labels,
+                y=[row[label] for label in band_labels],
+                name=row["Recording"],
+            )
+        )
+
+    fig_cmp_bands.update_layout(
+        title="Comparison of mean relative band energy",
+        xaxis_title="Frequency band",
+        yaxis_title="Mean relative band energy",
+        barmode="group",
+        height=420,
         margin=dict(l=60, r=20, t=60, b=60),
-        hovermode="x unified",
-        showlegend=False,
     )
-    st.plotly_chart(fig_m, use_container_width=True)
-    st.caption(
-        "Spectral centroid: high = bright/noisy timbre · low = bass-heavy.  "
-        "Spectral flatness: near 1 = noise-like · near 0 = tonal."
-    )
+    st.plotly_chart(fig_cmp_bands, width="stretch")
 
-    #TODO: summary table comparing both recordings once available
+    # grouped bar plot for centroid / flatness
+    fig_cmp_metrics = go.Figure()
+    for _, row in comparison_df.iterrows():
+        fig_cmp_metrics.add_trace(
+            go.Bar(
+                x=["Mean centroid (Hz)", "Mean flatness"],
+                y=[row["Mean centroid (Hz)"], row["Mean flatness"]],
+                name=row["Recording"],
+            )
+        )
+
+    fig_cmp_metrics.update_layout(
+        title="Comparison of additional spectral metrics",
+        xaxis_title="Metric",
+        yaxis_title="Value",
+        barmode="group",
+        height=420,
+        margin=dict(l=60, r=20, t=60, b=60),
+    )
+    st.plotly_chart(fig_cmp_metrics, width="stretch")
 
 st.divider()
-st.caption("DSP Exercise 3 * FH Joanneum * 2026")
+st.caption("DSP Exercise 3 · FH Joanneum · 2026")

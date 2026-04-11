@@ -1,5 +1,6 @@
 """
-Run with:  uv run streamlit run Main_Page.py
+Run with:  uv run streamlit run Main_Page.py       
+            .venv\Scripts\python.exe -m streamlit run Main_Page.py
 """
 import streamlit as st
 import sys
@@ -18,7 +19,7 @@ st.title("Digital Signal Processing - FH Joanneum")
 
 st.info("Use the **sidebar** to navigate between sections of the report.")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown(
@@ -35,11 +36,21 @@ with col2:
     st.markdown(
         """
         ### Exercise 2 - Frequency Domain Analysis
-        *Coming soon*
         """
     )
     if st.button("Go to Exercise 2"):
         st.switch_page("pages/6_Ex2_Introduction.py")
+
+with col3:
+    st.markdown(
+        """
+        ### Exercise 3 - Time-Frequency Analysis
+        STFT-based analysis of two music recordings with interactive spectrogram views,
+        band energy features, spectral centroid, and spectral flatness.
+        """
+    )
+    if st.button("Go to Exercise 3"):
+        st.switch_page("pages/10_Ex3_Introduction.py")
 
 # with col1:
 #     st.markdown(

@@ -4,7 +4,7 @@ import pandas as pd
 
 #Window functions!
 
-WINDOW_FUNCTIONS = ["rectangular", "hann", "hamming", "blackman", ] #add more if you like, but these are the main ones to know for DSP
+WINDOW_FUNCTIONS = ["rectangular", "hann", "hamming", "blackman", ] 
 
 def get_window(name: str, length: int) -> np.ndarray:
     """
@@ -35,12 +35,22 @@ def get_window(name: str, length: int) -> np.ndarray:
 
 
 #DFT (reused from Ex2 - same definition-based implementation)
-def dft(x: np.ndarray) -> np.ndarray:
-    x = np.asarray(x, dtype=float)
+# def dft(x: np.ndarray) -> np.ndarray:
+#     x = np.asarray(x, dtype=float)
+#     N = len(x)
+#     n = np.arange(N)
+#     k = n[:, None]
+#     W = np.exp(-2j * np.pi * k * n / N)
+#     return W @ x
+def dft(x, W=None):
+    x = np.asarray(x, dtype=complex)
     N = len(x)
-    n = np.arange(N)
-    k = n[:, None]
-    W = np.exp(-2j * np.pi * k * n / N)
+
+    if W is None:
+        n = np.arange(N)
+        k = n.reshape((N, 1))
+        W = np.exp(-2j * np.pi * k * n / N)
+
     return W @ x
 
 
@@ -55,7 +65,7 @@ def stft(
     """
     Short-Time Fourier Transform.
     The signal is split into partially overlapping frames. Each frame is multiplied by
-    the chosen window function and then transformed with our own DFT or can be used normal DFT ¯\_(ツ)_/¯.
+    the chosen window function and then transformed with our own DFT or can be used normal.
 
     Params
         samples: mono audio array (float32)
@@ -79,8 +89,7 @@ def stft(
         n_frames - int
         n_freqs - int
     """
-    # TODO: implement this once your songs are chosen and you're ready.
-    # Skeleton below shows the intended structure — fill in the body.
+
 
     samples = np.asarray(samples, dtype=float)
     window = get_window(window_name, win_length)
@@ -97,15 +106,17 @@ def stft(
     #allocate output array
     S = np.zeros((n_freqs, n_frames), dtype=complex)
 
+    n = np.arange(win_length)
+    k = n.reshape((win_length, 1))
+    W_dft = np.exp(-2j * np.pi * k * n / win_length)
+
     #main loop I guess, could be optimised with strided windows and matrix multiplication but this is clearer for learning purposes
     for m in range(n_frames):
         start = m * hop_length
         frame = samples_p[start : start + win_length]
         frame_w = frame * window # apply window
 
-        # TODO: replace np.fft.fft with our own dft() if we must, but the main point is to implement the framing and windowing correctly, so this is fine for now I guess?
-        #Using numpy FFT as placeholder so the page renders before the scratch implementation is complete.
-        X = np.fft.fft(frame_w) #swap to dft(frame_w)
+        X = dft(frame_w, W=W_dft)
         S[:, m] = X[:n_freqs]
 
     #axes
@@ -166,9 +177,7 @@ def to_mel(
         mel_freqs - (n_mels,) centre frequencies of Mel bins in Hz
         filterbank - (n_mels, n_freqs) the filterbank matrix
     """
-    # TODO: implement Mel filterbank.
-    #Placeholder: use librosa only as a reference to cross-check, then replace with the manual implementation below.
-
+    
     if fmax is None:
         fmax = float(sr) / 2.0
 

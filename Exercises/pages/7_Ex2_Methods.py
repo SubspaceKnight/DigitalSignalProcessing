@@ -458,7 +458,7 @@ fig_annot = plot_annotated_event(
 if fig_annot is not None:
     st.plotly_chart(fig_annot, use_container_width=True)
     st.caption(
-        "Figure X. Example of the event-based analysis for one selected event. "
+        "Example of the event-based analysis for one selected event. "
         "The plot shows the 1 s baseline window before the marker, the 5 s post-event "
         "analysis window, the estimated baseline, the estimated low level, the time "
         "to low plateau, and the plateau duration."

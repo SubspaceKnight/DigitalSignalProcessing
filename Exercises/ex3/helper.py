@@ -1,29 +1,17 @@
 import numpy as np
 import streamlit as st
 from pathlib import Path
+import sys
 
-BASE_DIR  = Path(__file__).resolve().parent
-DATA_DIR  = BASE_DIR.parent / "data" / "audio" 
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data" / "audio"
 
 @st.cache_data
 def load_audio(filename: str, mono: bool = True) -> dict:
-    """
-    Supports: .wav, .mp3, .flac, .ogg.
-    librosa is used ONLY for I/O and resampling - NOT for analysis.
-
-    Params:
-    filename - filename relative to DATA_DIR ("song_a.wav").
-    mono - if true convert to mono.
-
-    Returns:
-    dict
-        Keys: samples (np.ndarray, float32), sr (abbr "SampleRate", int, Hz), duration (float, s),
-        n_samples (int), filename (str), channels (int, pre-mono count).
-    """
     try:
         import librosa
-    except ImportError:
-        st.error("librosa is not installed. Run: uv add librosa")
+    except Exception as e:
+        st.error(f"Could not import librosa: {type(e).__name__}: {e}")
         return {}
 
     path = DATA_DIR / filename
@@ -31,10 +19,12 @@ def load_audio(filename: str, mono: bool = True) -> dict:
         st.error(f"Audio file not found: {path}")
         return {}
 
-    samples, sr = librosa.load(str(path), sr=None, mono=mono)
+    try:
+        samples, sr = librosa.load(str(path), sr=None, mono=mono)
+    except Exception as e:
+        st.error(f"Could not load audio file '{filename}': {type(e).__name__}: {e}")
+        return {}
 
-    #librosa returns (channels, samples) for stereo when mono=False, or (samples,) for mono. 
-    #normalise to always be (samples,) or (2, samples)?
     if samples.ndim == 1:
         channels = 1
     else:
@@ -46,18 +36,17 @@ def load_audio(filename: str, mono: bool = True) -> dict:
     samples = samples.astype(np.float32)
 
     return {
-        "samples":   samples,
-        "sr":        int(sr),
-        "duration":  float(len(samples) / sr),
+        "samples": samples,
+        "sr": int(sr),
+        "duration": float(len(samples) / sr),
         "n_samples": len(samples),
-        "filename":  filename,
-        "channels":  channels,
+        "filename": filename,
+        "channels": channels,
     }
 
 
 @st.cache_data
 def list_audio_files() -> list[str]:
-    """Return all audio files present in DATA_DIR (sorted)."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     extensions = {".wav", ".mp3", ".flac", ".ogg", ".aiff", ".m4a"}
     return sorted(
@@ -67,14 +56,13 @@ def list_audio_files() -> list[str]:
 
 
 def audio_info_df(audio: dict) -> dict:
-    """Return a flat dict of human-readable metadata for display in st.metric / st.dataframe."""
     if not audio:
         return {}
     return {
-        "File":        audio["filename"],
+        "File": audio["filename"],
         "Sample_rate": f"{audio['sr']} Hz",
-        "Duration":    f"{audio['duration']:.2f} s",
-        "Samples":     f"{audio['n_samples']:,}",
-        "Channels":    audio["channels"],
-        "Nyquist":     f"{audio['sr'] // 2} Hz", #can be useful for filter design or be removed
+        "Duration": f"{audio['duration']:.2f} s",
+        "Samples": f"{audio['n_samples']:,}",
+        "Channels": audio["channels"],
+        "Nyquist": f"{audio['sr'] // 2} Hz",
     }
