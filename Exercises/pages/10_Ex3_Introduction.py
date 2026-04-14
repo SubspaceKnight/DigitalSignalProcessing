@@ -80,10 +80,45 @@ st.markdown(
 
 st.markdown("### Interactive demo — effect of window length on a two-tone signal")
 
-fs_demo = 8000
+st.markdown(
+    """
+    The signal below consists of two pure sinusoids — **440 Hz** (A4, a musical "A") and
+    **880 Hz** (A5, one octave higher, at 70 % amplitude). Because both tones are constant
+    throughout the recording, the spectrogram should ideally show two thin, perfectly
+    horizontal lines. How well it does that depends entirely on your window settings.
+
+    **Reading the color axis (dB scale)**
+
+    The color encodes *magnitude in decibels*:
+    $$\\text{dB}[k,m] = 20\\log_{10}|X[k,m]|$$
+    Decibels are logarithmic: every +20 dB corresponds to x10 in amplitude. The scale is
+    anchored so that the loudest bin in the spectrogram is **0 dB** (white/yellow), and
+    anything 60 dB quieter appears dark blue/black. Bins below -60 dB are treated as silence
+    and clipped to the bottom of the range — this keeps noise from washing out the display.
+
+    **What to look for**
+    - With a **long window** the two frequency lines appear sharp and narrow → good frequency
+      resolution (small Δf), but each column covers a longer stretch of time.
+    - With a **short window** the lines blur vertically (large Δf) while each column
+      represents a shorter time slice → good time resolution, poor frequency resolution.
+    - Switching from *Rectangular* to a smooth window (Hann, Hamming, Blackman) visibly
+      suppresses the faint horizontal smear between the two main lines — those are **spectral
+      leakage** artefacts caused by the abrupt frame edges of the rectangular window.
+    - The faint glow at the **very bottom of the plot (0-100 Hz)** is also a leakage
+      artefact, not real signal energy. The k = 0 bin (DC) measures the mean of each
+      windowed frame — theoretically zero for a zero-mean sinusoid, but floating-point
+      summation leaves a tiny residual that becomes visible on a dB scale. The near-DC bins
+      pick up side-lobe energy leaking *down* from 440 Hz: the rectangular window's first
+      side-lobe is only -13 dB below the main lobe, so this low-frequency contamination is
+      substantial. Switch to Hann or Blackman and it almost completely disappears — a direct
+      demonstration of why window choice matters.
+    """
+)
+
+fs_demo = 2048*3
 t_demo = np.linspace(0, 1.0, fs_demo, endpoint=False)
 #Two tones: 440 Hz and 880 Hz
-x_demo  = np.sin(2 * np.pi * 440 * t_demo) + 0.7 * np.sin(2 * np.pi * 880 * t_demo)
+x_demo = np.sin(2 * np.pi * 440 * t_demo) + 0.7 * np.sin(2 * np.pi * 880 * t_demo)
 
 col_sl1, col_sl2 = st.columns(2)
 with col_sl1:
@@ -108,14 +143,28 @@ result_demo = analysis.stft(
 )
 mag_db_demo = analysis.to_db(result_demo["magnitude"])
 
+# Widen to 80 dB so rectangular-window leakage (~-13 dB below peak) falls
+# into the darker portion of Magma rather than the mid-range red.
+DB_RANGE = 80
+z_max = mag_db_demo.max()
+z_min = z_max - DB_RANGE
+mag_db_demo[mag_db_demo < z_min] = z_min
+
 fig_demo = go.Figure(go.Heatmap(
     x=result_demo["times"],
     y=result_demo["freqs"],
     z=mag_db_demo,
     colorscale="Magma",
-    zmin=mag_db_demo.max() - 60,
-    zmax=mag_db_demo.max(),
-    colorbar=dict(title="dB"),
+    zmin=z_min-10, #workaround against the artifacts on the edges of the plot
+    zmax=z_max,
+    colorbar=dict(
+        title="rel. dB",
+        tickvals=[z_min, z_min + DB_RANGE * 0.25, z_min + DB_RANGE * 0.5,
+                  z_min + DB_RANGE * 0.75, z_max],
+        ticktext=[f"-{DB_RANGE} dB", f"-{DB_RANGE // 4 * 3} dB",
+                  f"-{DB_RANGE // 2} dB", f"-{DB_RANGE // 4} dB",
+                  "peak"], 
+    ),
 ))
 fig_demo.update_layout(
     xaxis_title="Time (s)",
@@ -123,18 +172,23 @@ fig_demo.update_layout(
     yaxis_range=[0, 2000],
     title=(
         f"STFT spectrogram — window = {win_len_demo} samples "
-        f"({win_len_demo / fs_demo * 1000:.1f} ms) · "
-        f"Δf = {fs_demo / win_len_demo:.1f} Hz · "
+        f"({win_len_demo / fs_demo * 1000:.1f} ms), "
+        f"Δf = {fs_demo / win_len_demo:.1f} Hz, "
         f"window = {win_fn_demo}"
     ),
-    height=340,
+    height=360,
     margin=dict(l=60, r=20, t=50, b=60),
+    plot_bgcolor="#0d0221",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="#cccccc"),
 )
-st.plotly_chart(fig_demo, use_container_width=True)
+st.plotly_chart(fig_demo, use_container_width=True, theme=None)
 st.caption(
-    "A 440 Hz + 880 Hz two-tone signal. "
-    "Increase the window length to resolve the two frequency lines more sharply. "
-    "Decrease it to gain time resolution at the cost of frequency precision."
+    "440 Hz + 880 Hz two-tone signal, 1 s at 8 kHz. "
+    "Color = relative magnitude: white/yellow = loudest bin (labeled 'peak'), dark = -80 dB below peak. "
+    "The faint glow near 0 Hz is a DC/leakage artefact — try switching to Hann to suppress it. "
+    "Try: Rectangular → Hann to see leakage reduction; "
+    "64 → 2048 samples to see the frequency-resolution trade-off."
 )
 
 st.divider()
