@@ -330,6 +330,52 @@ fig_avg_spec.update_layout(
 st.plotly_chart(fig_avg_spec, width="stretch")
 
 # --------------------------------------------------
+# Average mel spectrum
+# --------------------------------------------------
+st.markdown("## Average mel spectrum of the selected segment")
+
+mel_avg_result = analysis.to_mel(
+    stft_result["power"],
+    sr=sr,
+    freqs=freqs,
+    n_mels=n_mels,
+    fmin=0.0,
+    fmax=sr / 2,
+)
+
+mel_spec = mel_avg_result["mel_spec"]
+mel_freqs = mel_avg_result["mel_freqs"]
+
+avg_mel = np.mean(mel_spec, axis=1)
+avg_mel_db = 10 * np.log10(np.maximum(avg_mel, 1e-12))
+
+fig_avg_mel = go.Figure()
+fig_avg_mel.add_trace(
+    go.Scatter(
+        x=mel_freqs,
+        y=avg_mel_db,
+        mode="lines",
+        name="Average mel spectrum",
+    )
+)
+fig_avg_mel.update_layout(
+    title="Average mel spectrum over the selected segment",
+    xaxis_title="Mel frequency (Hz)",
+    yaxis_title="Average mel power (dB)",
+    height=350,
+    margin=dict(l=60, r=20, t=60, b=60),
+)
+st.plotly_chart(fig_avg_mel, width="stretch")
+
+st.markdown(
+    """
+The average mel spectrum summarises the spectral energy of the selected segment on a
+perceptually motivated frequency scale. Compared with the linear frequency spectrum,
+it emphasises how energy is distributed across frequency bands in a way that is closer
+to human hearing.
+"""
+)
+# --------------------------------------------------
 # Band energy
 # --------------------------------------------------
 st.markdown("## Band energy features")
