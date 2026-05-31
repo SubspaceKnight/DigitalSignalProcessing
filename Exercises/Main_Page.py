@@ -19,7 +19,7 @@ st.title("Digital Signal Processing - FH Joanneum")
 
 st.info("Use the **sidebar** to navigate between sections of the report.")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown(
@@ -52,6 +52,18 @@ with col3:
     if st.button("Go to Exercise 3"):
         st.switch_page("pages/10_Ex3_Introduction.py")
 
+with col4:
+    st.markdown(
+        """
+        ### Exercise 4 - Digital Filtering
+        Digital filtering analysis of EEG data with interactive FIR and IIR low-pass filter design, 
+        magnitude and phase response comparison, pole-zero interpretation, filter order effects, 
+        Kaiser-window transition-width experiments, 
+        and comparison of full-signal vs. segmented filtering.
+        """
+    )
+    if st.button("Go to Exercise 4"):
+        st.switch_page("pages/14_Ex4_Introduction.py")
 # with col1:
 #     st.markdown(
 #         """
