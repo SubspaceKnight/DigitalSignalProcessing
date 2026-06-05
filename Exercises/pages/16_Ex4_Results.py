@@ -2,7 +2,8 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as signal
-
+from ex4.helper import load_eeg_excel
+from ex4.analysis import apply_lfilter, apply_sosfilt, design_kaiser
 # ------------------------------------------------------------
 # Page configuration
 # ------------------------------------------------------------
@@ -396,5 +397,80 @@ with tab3:
     )
 
 st.divider()
+
+from pathlib import Path
+BASE_DIR    = Path(__file__).resolve().parent
+DATA_DIR    = BASE_DIR.parent / "data"
+DATA_PATH = DATA_DIR / "data_s05_s1_fcz.xlsx"
+eeg_data = load_eeg_excel(DATA_PATH)
+
+if eeg_data is not None:
+    time = eeg_data['time']
+    signal_raw = eeg_data['signal']
+    
+    tab4, tab5 = st.tabs(["Signal Filtering & SOS Matrix", "Kaiser Estimation & Transients"])
+    
+    with tab4:
+        st.subheader("Applying Filters to the EEG Signal")
+        
+        #filters design
+        b_fir = design_fir(selected_fir_taps)
+        b_iir, a_iir = design_iir(selected_iir_order)
+        sos_iir = signal.butter(selected_iir_order, cutoff, btype="lowpass", fs=fs, output="sos")
+        
+        #applying filters
+        filtered_fir = apply_lfilter(b_fir, [1.0], signal_raw) #zero for feedbacks except the first one at 0 sec, only feedforward coefficients
+        filtered_iir_ba = apply_lfilter(b_iir, a_iir, signal_raw)
+        filtered_iir_sos = apply_sosfilt(sos_iir, signal_raw) #we use SOS (Second-Order Sections) Matrix for the IIR filter to ensure numerical stability, especially for higher orders. The SOS format breaks down the filter into cascaded biquads, which prevents issues with pole-zero sensitivity that can arise with direct transfer function coefficients. This is particularly important for IIR filters, as they can become unstable if the poles are not handled correctly, especially when implemented with finite precision arithmetic (64-bit machines).
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(time, signal_raw, alpha=0.3, color='gray', label="Raw EEG")
+        ax.plot(time, filtered_fir, label=f"FIR ({selected_fir_taps} taps)")
+        ax.plot(time, filtered_iir_ba, linestyle="--", label=f"IIR (lfilter, Order {selected_iir_order})")
+        ax.plot(time, filtered_iir_sos, linestyle=":", label=f"IIR (sosfilt, Order {selected_iir_order})")
+        
+        ax.set_title("Filtered EEG Waveforms")
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Amplitude")
+        ax.legend()
+        st.pyplot(fig)
+        
+        st.info("**Observation:** FIR filters introduce a consistent delay (linear phase shift). High-order IIR filters applied via standard transfer coefficients (`b`, `a`) may exhibit numerical instability, which is why the SOS matrix is preferred.")
+
+    with tab5:
+        st.subheader("Kaiser Window Estimation & Transient Effects")
+        #The transition width is the gap between "passing" a signal and "stopping" it. A smaller transition width means a sharper cutoff, which requires a higher filter order. When we ask for a very narrow transition (e.g. 0.2Hz), the Kaiser method estimates that we need thousands of taps to achieve that sharpness. Applying such a high-order FIR filter to a signal can cause significant ringing artifacts (Gibbs phenomenon) and an extreme delay, especially if the filter is applied to a short segment without proper state initialization.
+        #In simple words - if we ask kaiserord for 0.2 Hz transition width, it will divide the sampling frequency (512 Hz) by 0.2 Hz, which gives us 2560. This means we would need an FIR filter with around 2560 taps to achieve that narrow transition, which is impractical and leads to severe artifacts when applied to real signals.
+        #Transition width is the frequency 'gray' range/zone which defines the soft boarders between allowed and banned frequencies. E.g. if we design a 10Hz low-pass filter, we want 9.9Hz to pass perfectly, and 10.1Hz to be completely blocked. 
+        widths = [5.0, 2.0, 1.0, 0.2] #Transition widths in Hz for Kaiser filter design. Smaller widths require higher orders.
+        selected_width = st.radio("Select Transition Width [Hz]:", widths, horizontal=True)
+        
+        #design Kaiser filter
+        b_kaiser, estimated_taps = design_kaiser(cutoff, selected_width, fs)
+        
+        st.metric(f"Estimated Order for {selected_width} Hz transition", estimated_taps - 1)
+        
+        #applying to full signal
+        filtered_full = apply_lfilter(b_kaiser, [1.0], signal_raw)
+        #extracting last 2 seconds from the already filtered signal
+        segment_filtered_first = filtered_full[-int(2 * fs):]
+        
+        #appplying only to last 2 seconds
+        segment_raw = signal_raw[-int(2 * fs):]
+        segment_filtered_second = apply_lfilter(b_kaiser, [1.0], segment_raw)
+        time_segment = time[-int(2 * fs):]
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.plot(time_segment, segment_raw, alpha=0.3, color='gray', label="Raw Segment")
+        ax.plot(time_segment, segment_filtered_first, label="Filtered Full -> Segmented")
+        ax.plot(time_segment, segment_filtered_second, linestyle="--", label="Segmented -> Filtered")
+        
+        ax.set_title(f"Transient Effects (Kaiser FIR, Order {estimated_taps-1})")
+        ax.set_xlabel("Time [s]")
+        ax.legend()
+        st.pyplot(fig)
+        
+        st.warning("**Transient Risk:** Notice the massive initial distortion when filtering the isolated segment with a high-order filter. The filter lacks previous state history.")
+
 
 st.caption("DSP Exercise 4 * FH Joanneum * 2026")
